@@ -16,7 +16,8 @@ export const expenseImportSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string().optional(),
-  price: z.number().positive(),
+  // Negative is valid: money received (e.g. salary), the opposite of an expense.
+  price: z.number().refine((n) => n !== 0, 'price must not be zero'),
   itemCount: z.number().optional(),
   paidBy: z.string(),
   categories: z.array(z.string()),

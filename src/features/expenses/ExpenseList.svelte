@@ -93,7 +93,7 @@
                     <span class="muted"> — {expense.description}</span>
                   {/if}
                 </div>
-                <strong>{currency.format(expense.price)}</strong>
+                <strong style:color={expense.price < 0 ? 'var(--success)' : undefined}>{currency.format(expense.price)}</strong>
               </div>
               <div class="row muted">
                 <span>{expense.date}</span>

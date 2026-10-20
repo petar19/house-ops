@@ -198,6 +198,9 @@ export interface Reminder {
   periodUnit?: 'day' | 'week' | 'month';
   periodAmount?: number;
   periodSeconds?: number;
+  // Fires still to go (counting the one currently pending) for a reminder
+  // created with ?reminder(WHEN, FREQ, TIMES); unset means it repeats forever.
+  timesRemaining?: number;
   status: 'active' | 'paused' | 'done';
   createdAt: number;
   lastSentAt?: number | null;

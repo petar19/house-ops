@@ -87,8 +87,11 @@
       error = $t('expenseForm.nameRequired');
       return;
     }
-    if (Number.isNaN(priceNum) || priceNum <= 0) {
-      error = $t('expenseForm.pricePositive');
+    // Negative is allowed on purpose: it's the opposite of an expense, money
+    // received (salary etc.), which nets against spending in totals. Only
+    // zero is rejected, matching the Firestore rule (price != 0).
+    if (Number.isNaN(priceNum) || priceNum === 0) {
+      error = $t('expenseForm.priceNonZero');
       return;
     }
     saving = true;
@@ -143,13 +146,14 @@
   <div class="row">
     <label style="flex:1">
       {$t('expenseForm.price')}
-      <input type="number" step="0.01" min="0" bind:value={price} required />
+      <input type="number" step="0.01" bind:value={price} required />
     </label>
     <label style="flex:1">
       {$t('expenseForm.itemCount')} <span class="muted">{$t('expenseForm.optional')}</span>
       <input type="number" min="1" bind:value={itemCount} />
     </label>
   </div>
+  <p class="muted">{$t('expenseForm.priceHint')}</p>
   {#if parsedItemCount > 1 && totalPrice !== null}
     <p class="muted">{$t('expenseForm.totalPrice', { total: totalPrice.toFixed(2) })}</p>
   {/if}

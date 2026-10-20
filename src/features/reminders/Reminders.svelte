@@ -299,6 +299,7 @@
               {#if r.targetUid && r.targetUid !== r.ownerUid}
                 · {$t('reminders.forSomeone', { name: allKnownMembers.find(([uid]) => uid === r.targetUid)?.[1] ?? r.targetUid })}
               {/if}
+              {#if r.timesRemaining !== undefined && r.status !== 'done'} · {$t('reminders.timesLeft', { count: r.timesRemaining })}{/if}
               {#if r.status === 'paused'} · {$t('reminders.paused')}{/if}
               {#if r.status === 'done'} · {$t('reminders.done')}{/if}
             </div>
@@ -324,6 +325,7 @@
             <strong>{r.text}</strong>
             <div class="muted">
               {formatNext(r)} {periodLabel(r)}
+              {#if r.timesRemaining !== undefined && r.status !== 'done'} · {$t('reminders.timesLeft', { count: r.timesRemaining })}{/if}
               {#if r.status === 'paused'} · {$t('reminders.paused')}{/if}
               {#if r.status === 'done'} · {$t('reminders.done')}{/if}
             </div>
