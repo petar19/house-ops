@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from '../../lib/i18n';
-  import { cellLabel, isLow, levelCellIds, levelLabel } from '../../lib/storage/layout';
+  import { cellLabel, coveredCellIds, isLow, isSpanning, levelCellIds, levelLabel, spanOf } from '../../lib/storage/layout';
   import type { StorageItem, StorageUnit } from '../../lib/types';
 
   // The 2D view of one unit, generated purely from its template numbers:
@@ -26,12 +26,17 @@
 
   let byCell = $derived.by(() => {
     const map = new Map<string, StorageItem[]>();
+    // A spanning item shows up in every cell it covers, listed first there.
     for (const item of items) {
-      const list = map.get(item.cellId) ?? [];
-      list.push(item);
-      map.set(item.cellId, list);
+      for (const id of coveredCellIds(item.cellId, spanOf(item))) {
+        const list = map.get(id) ?? [];
+        list.push(item);
+        map.set(id, list);
+      }
     }
-    for (const list of map.values()) list.sort((a, b) => a.name.localeCompare(b.name));
+    for (const list of map.values()) {
+      list.sort((a, b) => Number(isSpanning(b)) - Number(isSpanning(a)) || a.name.localeCompare(b.name));
+    }
     return map;
   });
 
@@ -69,7 +74,7 @@
             </span>
             {#if !compact}
               {#each cellItems.slice(0, PREVIEW_NAMES) as item (item.id)}
-                <span class="item-name" class:low={isLow(item)}>{item.name}</span>
+                <span class="item-name" class:low={isLow(item)}>{#if isSpanning(item)}<span class="span-mark" title={$t('storage.spans')}>⧉</span> {/if}{item.name}</span>
               {/each}
               {#if cellItems.length > PREVIEW_NAMES}
                 <span class="more">{$t('storage.more', { count: cellItems.length - PREVIEW_NAMES })}</span>
@@ -175,6 +180,9 @@
   }
   .item-name.low {
     color: var(--danger);
+  }
+  .span-mark {
+    color: var(--accent);
   }
   .more {
     color: var(--text-dim);

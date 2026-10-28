@@ -1,4 +1,4 @@
-import type { StorageItem, StorageUnit, StorageUnitKind } from '../types';
+import type { StorageItem, StorageSpan, StorageUnit, StorageUnitKind } from '../types';
 import type { Translate } from '../i18n';
 
 export interface UnitShape {
@@ -56,9 +56,58 @@ export function allCellIds(shape: Omit<UnitShape, 'kind'>): string[] {
   return ids;
 }
 
-/** Items that would be left in a cell the new shape no longer has. */
+// ── Spans ────────────────────────────────────────────────────────────────
+
+export const SINGLE: StorageSpan = { levels: 1, rows: 1, cols: 1 };
+
+export function spanOf(item: { span?: StorageSpan | null }): StorageSpan {
+  return item.span ?? SINGLE;
+}
+
+export function isSpanning(item: { span?: StorageSpan | null }): boolean {
+  const s = spanOf(item);
+  return s.levels > 1 || s.rows > 1 || s.cols > 1;
+}
+
+/** Every cell an item anchored at `id` with `span` covers. */
+export function coveredCellIds(id: string, span: StorageSpan = SINGLE): string[] {
+  const p = parseCellId(id);
+  if (!p) return [id];
+  const ids: string[] = [];
+  for (let l = p.level; l < p.level + span.levels; l++) {
+    for (let r = p.row; r < p.row + span.rows; r++) {
+      for (let c = p.col; c < p.col + span.cols; c++) ids.push(cellId(l, r, c));
+    }
+  }
+  return ids;
+}
+
+export function spanFits(shape: Omit<UnitShape, 'kind'>, id: string, span: StorageSpan = SINGLE): boolean {
+  return coveredCellIds(id, span).every((c) => cellExists(shape, c));
+}
+
+/** The box between two cells (either order) as an anchor + span. */
+export function spanBetween(a: string, b: string): { cellId: string; span: StorageSpan } {
+  const p = parseCellId(a);
+  const q = parseCellId(b);
+  if (!p || !q) return { cellId: a, span: SINGLE };
+  return {
+    cellId: cellId(Math.min(p.level, q.level), Math.min(p.row, q.row), Math.min(p.col, q.col)),
+    span: {
+      levels: Math.abs(p.level - q.level) + 1,
+      rows: Math.abs(p.row - q.row) + 1,
+      cols: Math.abs(p.col - q.col) + 1,
+    },
+  };
+}
+
+export function coversCell(item: Pick<StorageItem, 'cellId' | 'span'>, id: string): boolean {
+  return coveredCellIds(item.cellId, spanOf(item)).includes(id);
+}
+
+/** Items that would no longer fit (some covered cell gone) in a new shape. */
 export function orphanedItems(shape: Omit<UnitShape, 'kind'>, items: StorageItem[]): StorageItem[] {
-  return items.filter((i) => !cellExists(shape, i.cellId));
+  return items.filter((i) => !spanFits(shape, i.cellId, spanOf(i)));
 }
 
 export function levelLabel(unit: Pick<StorageUnit, 'kind' | 'levels' | 'levelNames'>, level: number, t: Translate): string {
@@ -95,21 +144,35 @@ export function cellLabel(unit: Pick<StorageUnit, 'rows' | 'cols' | 'cellNames'>
   return [rowLabel(unit.rows, p.row, t), colLabel(unit.cols, p.col, t)].filter(Boolean).join(' · ');
 }
 
-/** Full breadcrumb, e.g. "Chest freezer › Layer 2 › 3". */
-export function placeLabel(unit: StorageUnit, id: string, t: Translate): string {
+/**
+ * Full breadcrumb, e.g. "Chest freezer › Layer 2 › 3". A spanning item reads
+ * as ranges: "Chest freezer › Layer 1 (top) – Layer 2 › 3".
+ */
+export function placeLabel(unit: StorageUnit, id: string, t: Translate, span: StorageSpan = SINGLE): string {
   const p = parseCellId(id);
   const parts = [unit.name];
-  if (p) parts.push(levelLabel(unit, p.level, t));
+  if (p) {
+    const top = levelLabel(unit, p.level, t);
+    parts.push(span.levels > 1 ? `${top} – ${levelLabel(unit, p.level + span.levels - 1, t)}` : top);
+  }
   const cell = cellLabel(unit, id, t);
-  if (cell) parts.push(cell);
+  if (p && (span.rows > 1 || span.cols > 1)) {
+    const far = cellLabel(unit, cellId(p.level, p.row + span.rows - 1, p.col + span.cols - 1), t);
+    if (cell || far) parts.push(`${cell} – ${far}`);
+  } else if (cell) {
+    parts.push(cell);
+  }
   return parts.join(' › ');
 }
 
-/** Binds the current units + translator into the store's PlaceOf callback. */
-export function makePlaceOf(units: StorageUnit[], t: Translate): (unitId: string, cellId: string) => string {
-  return (unitId, id) => {
+/** Resolves a unit + anchor cell (+ span) to its breadcrumb. */
+export type PlaceOf = (unitId: string, cellId: string, span?: StorageSpan | null) => string;
+
+/** Binds the current units + translator into a PlaceOf. */
+export function makePlaceOf(units: StorageUnit[], t: Translate): PlaceOf {
+  return (unitId, id, span) => {
     const unit = units.find((u) => u.id === unitId);
-    return unit ? placeLabel(unit, id, t) : id;
+    return unit ? placeLabel(unit, id, t, span ?? SINGLE) : id;
   };
 }
 

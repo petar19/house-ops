@@ -54,7 +54,7 @@
                 <strong class:low={isLow(item)}>{item.name}</strong>
                 <span class="muted">{formatQty(item, $t)}</span>
               </span>
-              <span class="muted">{placeOf(item.unitId, item.cellId)}</span>
+              <span class="muted">{placeOf(item.unitId, item.cellId, item.span)}</span>
             </button>
           {/each}
         {/if}

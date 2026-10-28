@@ -3,7 +3,7 @@
   import { t } from '../../lib/i18n';
   import { activeGroup } from '../../lib/stores/groups';
   import { catalogOptions, storageItems, storageLoading, storageUnits } from '../../lib/stores/storage';
-  import { KIND_ICONS, cellExists, cellLabel, levelLabel, parseCellId } from '../../lib/storage/layout';
+  import { KIND_ICONS, cellExists, cellLabel, coveredCellIds, levelLabel, parseCellId, spanOf } from '../../lib/storage/layout';
   import { searchItems } from '../../lib/storage/suggest';
   import Modal from '../../lib/components/Modal.svelte';
   import CellPanel from './CellPanel.svelte';
@@ -34,7 +34,7 @@
 
   let matches = $derived(searchItems(q, unitItems, $catalogOptions));
   let matchIds = $derived(new Set(matches.map((i) => i.id)));
-  let highlightCells = $derived(new Set(matches.map((i) => i.cellId)));
+  let highlightCells = $derived(new Set(matches.flatMap((i) => coveredCellIds(i.cellId, spanOf(i)))));
 
   let cellTitle = $derived.by(() => {
     if (!unit || !openCellId) return '';

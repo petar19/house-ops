@@ -448,4 +448,11 @@ export const en: Record<string, string> = {
   'storage.details': 'Details & history',
   'storage.mode.count': 'exact',
   'storage.mode.level': 'rough',
+  'storage.spans': 'Takes up several cells',
+  'storage.spansOver': 'takes up {place}',
+  'storage.space': 'Space',
+  'storage.spaceHint': 'Tap another cell to stretch this item over everything in between — e.g. both depths, or two layers. Smaller items can still go in those cells too.',
+  'storage.spaceReset': 'Just this cell',
+  'storage.spanNoFit': 'Too big for that spot: {names}',
+  'storage.field.space': 'space',
 };

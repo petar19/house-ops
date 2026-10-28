@@ -448,4 +448,11 @@ export const hr: Record<string, string> = {
   'storage.details': 'Detalji i povijest',
   'storage.mode.count': 'točna',
   'storage.mode.level': 'okvirna',
+  'storage.spans': 'Zauzima više pretinaca',
+  'storage.spansOver': 'zauzima {place}',
+  'storage.space': 'Prostor',
+  'storage.spaceHint': 'Dodirni drugi pretinac da se stvar proteže preko svega između — npr. obje dubine ili dva sloja. Manje stvari i dalje mogu ići u te pretince.',
+  'storage.spaceReset': 'Samo ovaj pretinac',
+  'storage.spanNoFit': 'Prevelike za to mjesto: {names}',
+  'storage.field.space': 'prostor',
 };

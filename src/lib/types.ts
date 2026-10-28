@@ -260,12 +260,22 @@ export interface StorageUnit {
 
 export type StorageLevel = 'plenty' | 'some' | 'low' | 'empty';
 
+// How many levels/rows/cols an item takes up, counted from its cellId (the
+// top, back, left corner) — a tall freezer item is { levels: 2, rows: 1,
+// cols: 1 }. Cells aren't exclusive: smaller items can share any covered cell.
+export interface StorageSpan {
+  levels: number;
+  rows: number;
+  cols: number;
+}
+
 // groups/{groupId}/storageItems/{id} — one entry per thing per cell. The
 // same thing in two places is two entries; search shows both.
 export interface StorageItem {
   id: string;
   unitId: string;
-  cellId: string;
+  cellId: string; // the item's anchor cell; see span
+  span?: StorageSpan | null; // absent/null = just the one cell
   name: string;
   nameKey: string; // normalizeText(name) — also the group catalog doc id
   // Exact ("3 pcs", "500 g") or vague ("some") — switchable per item.

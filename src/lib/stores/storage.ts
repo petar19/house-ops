@@ -23,12 +23,14 @@ import { normalizeText } from '../utils/normalize';
 import { locale } from '../i18n';
 import { SYSTEM_ITEMS } from '../storage/systemCatalog';
 import { mergeCatalog } from '../storage/suggest';
+import { isSpanning, type PlaceOf } from '../storage/layout';
 import type {
   StorageCatalogEntry,
   StorageCategory,
   StorageEvent,
   StorageItem,
   StorageLevel,
+  StorageSpan,
   StorageUnit,
   StorageUnitKind,
 } from '../types';
@@ -83,8 +85,8 @@ export const catalogOptions = derived([storageCatalog, locale], ([$catalog, $loc
   mergeCatalog(SYSTEM_ITEMS, $catalog, $locale),
 );
 
-/** Resolves a unit + cell to its human-readable breadcrumb for the history log. */
-export type PlaceOf = (unitId: string, cellId: string) => string;
+// Resolves a unit + cell (+ span) to its breadcrumb for the history log.
+export type { PlaceOf } from '../storage/layout';
 
 function uid(): string {
   const user = get(currentUser);
@@ -217,7 +219,7 @@ export async function addItem(
 
   const same = get(storageItems).find(
     (i) =>
-      i.unitId === unitId && i.cellId === cellId && i.nameKey === nameKey &&
+      i.unitId === unitId && i.cellId === cellId && i.nameKey === nameKey && !isSpanning(i) &&
       i.qtyMode === 'count' && draft.qtyMode === 'count' && (i.unit ?? '') === (draft.unit ?? ''),
   );
 
@@ -255,10 +257,19 @@ export async function addItem(
 
 const TRACKED_FIELDS: (keyof ItemDraft)[] = ['name', 'qtyMode', 'amount', 'unit', 'level', 'expiry', 'note'];
 
+/** Where an item sits: a new anchor cell and/or how much space it takes. */
+export interface SpaceDraft {
+  cellId: string;
+  span: StorageSpan | null;
+}
+
+const sameSpan = (a: StorageSpan | null | undefined, b: StorageSpan | null | undefined) =>
+  (a?.levels ?? 1) === (b?.levels ?? 1) && (a?.rows ?? 1) === (b?.rows ?? 1) && (a?.cols ?? 1) === (b?.cols ?? 1);
+
 export async function updateItem(
   groupId: string,
   item: StorageItem,
-  patch: Partial<ItemDraft>,
+  patch: Partial<ItemDraft> & Partial<SpaceDraft>,
   categoriesIfNew: string[],
   placeOf: PlaceOf,
 ): Promise<void> {
@@ -266,10 +277,18 @@ export async function updateItem(
   for (const key of TRACKED_FIELDS) {
     if (key in patch && patch[key] !== item[key]) changes[key] = { from: item[key] ?? null, to: patch[key] ?? null };
   }
+  const cellId = patch.cellId ?? item.cellId;
+  const span = 'span' in patch ? patch.span : item.span;
+  if (cellId !== item.cellId || !sameSpan(span, item.span)) {
+    // Logged as the place it covered before and after, not raw numbers.
+    changes.space = { from: placeOf(item.unitId, item.cellId, item.span), to: placeOf(item.unitId, cellId, span) };
+  }
   if (Object.keys(changes).length === 0) return;
 
   const batch = writeBatch(db);
   const update: Record<string, unknown> = { ...patch, updatedAt: Date.now(), updatedBy: uid() };
+  // A single cell is stored as no span at all, same as items that never had one.
+  if ('span' in patch) update.span = span && !sameSpan(span, null) ? span : null;
   if (changes.name) {
     const name = String(patch.name).trim();
     update.name = name;
@@ -282,8 +301,8 @@ export async function updateItem(
     itemId: item.id,
     itemName: (update.name as string | undefined) ?? item.name,
     unitId: item.unitId,
-    cellId: item.cellId,
-    place: placeOf(item.unitId, item.cellId),
+    cellId,
+    place: placeOf(item.unitId, cellId, span),
     changes,
   });
   await batch.commit();
@@ -313,10 +332,10 @@ export async function moveItems(
         itemName: item.name,
         unitId: item.unitId,
         cellId: item.cellId,
-        place: placeOf(item.unitId, item.cellId),
+        place: placeOf(item.unitId, item.cellId, item.span),
         toUnitId,
         toCellId,
-        toPlace: placeOf(toUnitId, toCellId),
+        toPlace: placeOf(toUnitId, toCellId, item.span),
       });
       if (get(storageCatalog).some((e) => e.id === item.nameKey)) {
         batch.update(doc(col(groupId, 'storageCatalog'), item.nameKey), {
@@ -337,7 +356,7 @@ export async function removeItems(groupId: string, items: StorageItem[], placeOf
         itemName: item.name,
         unitId: item.unitId,
         cellId: item.cellId,
-        place: placeOf(item.unitId, item.cellId),
+        place: placeOf(item.unitId, item.cellId, item.span),
       });
     }
   });

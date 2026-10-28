@@ -3,9 +3,13 @@ import {
   allCellIds,
   cellExists,
   cellLabel,
+  coveredCellIds,
+  coversCell,
   levelLabel,
   orphanedItems,
   placeLabel,
+  spanBetween,
+  spanFits,
 } from '../src/lib/storage/layout';
 import { matchQuality, mergeCatalog, searchItems, suggest } from '../src/lib/storage/suggest';
 import { SYSTEM_ITEMS } from '../src/lib/storage/systemCatalog';
@@ -187,6 +191,47 @@ describe('storage history wording', () => {
     );
     expect(text).toBe(
       'storage.history.edit(storage.field.amount 2 → 3, storage.field.level — → storage.qty.low, storage.field.note,Freezer › Layer 1)',
+    );
+  });
+});
+
+describe('storage spans', () => {
+  it('covers a box of cells from the anchor', () => {
+    expect(coveredCellIds('1.1.3', { levels: 2, rows: 1, cols: 1 })).toEqual(['1.1.3', '2.1.3']);
+    expect(coveredCellIds('2.1.1', { levels: 1, rows: 2, cols: 2 })).toEqual(['2.1.1', '2.1.2', '2.2.1', '2.2.2']);
+    expect(coveredCellIds('1.1.1')).toEqual(['1.1.1']);
+  });
+
+  it('builds the same box whichever corner is tapped first', () => {
+    expect(spanBetween('2.2.3', '1.1.3')).toEqual({ cellId: '1.1.3', span: { levels: 2, rows: 2, cols: 1 } });
+    expect(spanBetween('1.1.3', '2.2.3')).toEqual(spanBetween('2.2.3', '1.1.3'));
+  });
+
+  it('checks a span stays inside the unit', () => {
+    expect(spanFits(unit(), '2.1.4', { levels: 2, rows: 1, cols: 1 })).toBe(true);
+    expect(spanFits(unit(), '3.1.4', { levels: 2, rows: 1, cols: 1 })).toBe(false);
+    expect(spanFits(unit(), '1.1.4', { levels: 1, rows: 1, cols: 2 })).toBe(false);
+  });
+
+  it('shows a spanning item in every cell it covers, next to small items', () => {
+    const tall = item({ id: 'tall', cellId: '1.1.3', span: { levels: 2, rows: 1, cols: 1 } });
+    expect(coversCell(tall, '2.1.3')).toBe(true);
+    expect(coversCell(tall, '3.1.3')).toBe(false);
+  });
+
+  it('counts an item as orphaned when only its far end falls outside', () => {
+    const tall = item({ id: 'tall', cellId: '2.1.1', span: { levels: 2, rows: 1, cols: 1 } });
+    expect(orphanedItems({ levels: 2, rows: 1, cols: 4 }, [tall]).map((i) => i.id)).toEqual(['tall']);
+    expect(orphanedItems({ levels: 3, rows: 1, cols: 4 }, [tall])).toEqual([]);
+  });
+
+  it('labels a span as ranges', () => {
+    const shelf = unit({ name: 'Garage', kind: 'shelving', levels: 4, rows: 2, cols: 3 });
+    expect(placeLabel(shelf, '2.1.1', t, { levels: 1, rows: 2, cols: 1 })).toBe(
+      'Garage › storage.level.shelving(2) › storage.back · storage.left – storage.front · storage.left',
+    );
+    expect(placeLabel(unit(), '1.1.3', t, { levels: 2, rows: 1, cols: 1 })).toBe(
+      'Freezer › storage.level.chest(1) (storage.top) – storage.level.chest(2) › 3',
     );
   });
 });

@@ -13,11 +13,23 @@
     updateUnit,
     type ItemDraft,
   } from '../../lib/stores/storage';
-  import { formatQty, isLow, makePlaceOf } from '../../lib/storage/layout';
+  import {
+    SINGLE,
+    coveredCellIds,
+    coversCell,
+    formatQty,
+    isLow,
+    isSpanning,
+    makePlaceOf,
+    placeLabel,
+    spanBetween,
+    spanFits,
+    spanOf,
+  } from '../../lib/storage/layout';
   import { describeEvent } from '../../lib/storage/history';
   import { normalizeText } from '../../lib/utils/normalize';
   import type { CatalogOption } from '../../lib/storage/suggest';
-  import type { StorageEvent, StorageItem, StorageLevel, StorageUnit } from '../../lib/types';
+  import type { StorageEvent, StorageItem, StorageLevel, StorageSpan, StorageUnit } from '../../lib/types';
   import ItemNameInput from './ItemNameInput.svelte';
   import QtyFields from './QtyFields.svelte';
   import UnitGrid from './UnitGrid.svelte';
@@ -31,9 +43,15 @@
   let placeOf = $derived(makePlaceOf($storageUnits, $t));
   let items = $derived(
     $storageItems
-      .filter((i) => i.unitId === unit.id && i.cellId === cellId)
-      .sort((a, b) => a.name.localeCompare(b.name)),
+      .filter((i) => i.unitId === unit.id && coversCell(i, cellId))
+      // Big items that reach into this cell from elsewhere come first.
+      .sort((a, b) => Number(isSpanning(b)) - Number(isSpanning(a)) || a.name.localeCompare(b.name)),
   );
+
+  // "Layer 1 (top) – Layer 2 › 3" — the place without the unit's own name.
+  function spanText(item: Pick<StorageItem, 'cellId' | 'span'>): string {
+    return placeLabel(unit, item.cellId, $t, spanOf(item)).slice(unit.name.length + 3);
+  }
 
   let view = $state<'list' | 'edit' | 'move'>('list');
   let error = $state('');
@@ -162,6 +180,12 @@
   let edExpiry = $state('');
   let edNote = $state('');
   let history = $state<StorageEvent[] | null>(null);
+  // Space: tapping a cell makes the item cover the box between its top-back-
+  // left corner and that cell; "one cell" shrinks it back to this cell.
+  let edCorner = $state(''); // the fixed corner taps stretch from
+  let edCellId = $state('');
+  let edSpan = $state<StorageSpan>(SINGLE);
+  let edCovered = $derived(new Set(coveredCellIds(edCellId, edSpan)));
 
   function startEdit(item: StorageItem) {
     editing = item;
@@ -173,6 +197,9 @@
     edLevel = item.level ?? 'some';
     edExpiry = item.expiry ?? '';
     edNote = item.note ?? '';
+    edCorner = item.cellId;
+    edCellId = item.cellId;
+    edSpan = spanOf(item);
     history = null;
     view = 'edit';
     loadItemHistory(groupId, item.id)
@@ -190,14 +217,19 @@
       expiry: edExpiry || null,
       note: edNote.trim(),
     };
+    const space = { cellId: edCellId, span: edSpan };
     run(async () => {
-      await updateItem(groupId, item, patch, categoriesFor(edName, edPicked), placeOf);
+      await updateItem(groupId, item, { ...patch, ...space }, categoriesFor(edName, edPicked), placeOf);
       view = 'list';
     });
   }
 
   function memberName(uid: string): string {
     return $activeGroup?.members[uid]?.displayName ?? '?';
+  }
+
+  function pickCorner(id: string) {
+    ({ cellId: edCellId, span: edSpan } = spanBetween(edCorner, id));
   }
 
   // ── Move ──
@@ -214,6 +246,11 @@
   function confirmMove() {
     if (!moveUnit || !moveCellId) return;
     const target = moveCellId;
+    const tooBig = selectedItems.filter((i) => !spanFits(moveUnit!, target, spanOf(i)));
+    if (tooBig.length > 0) {
+      error = $t('storage.spanNoFit', { names: tooBig.map((i) => i.name).join(', ') });
+      return;
+    }
     run(async () => {
       await moveItems(groupId, selectedItems, moveUnit!.id, target, placeOf);
       selectedIds = new Set();
@@ -259,7 +296,8 @@
           <li class:hit={highlightIds.has(item.id)}>
             <input type="checkbox" checked={selectedIds.has(item.id)} onchange={() => toggle(item.id)} aria-label={item.name} />
             <button class="name" onclick={() => startEdit(item)}>
-              <span class:low={isLow(item)}>{item.name}</span>
+              <span class:low={isLow(item)}>{#if isSpanning(item)}<span class="span-mark">⧉</span> {/if}{item.name}</span>
+              {#if isSpanning(item)}<span class="muted span-text">{$t('storage.spansOver', { place: spanText(item) })}</span>{/if}
               {#if item.expiry}<span class="muted">· {$t('storage.expires', { date: item.expiry })}</span>{/if}
               {#if item.note}<span class="muted note">{item.note}</span>{/if}
             </button>
@@ -337,6 +375,17 @@
       <span class="muted">{$t('storage.field.note')}</span>
       <input bind:value={edNote} />
     </label>
+    <div class="stack field">
+      <span class="muted">{$t('storage.space')}</span>
+      <span class="muted">{$t('storage.spaceHint')}</span>
+      <UnitGrid unit={unit} items={[]} compact highlight={edCovered} selected={edCorner} onPick={pickCorner} />
+      <div class="row">
+        <span class="muted">{spanText({ cellId: edCellId, span: edSpan })}</span>
+        {#if edCovered.size > 1}
+          <button type="button" onclick={() => ((edCorner = edCellId = cellId), (edSpan = SINGLE))}>{$t('storage.spaceReset')}</button>
+        {/if}
+      </div>
+    </div>
     <div class="row">
       <button class="primary" type="submit" disabled={busy}>{$t('common.save')}</button>
       <button type="button" onclick={() => (view = 'list')}>{$t('common.cancel')}</button>
@@ -425,6 +474,12 @@
   }
   .low {
     color: var(--danger);
+  }
+  .span-mark {
+    color: var(--accent);
+  }
+  .span-text {
+    flex-basis: 100%;
   }
   .details {
     display: grid;
