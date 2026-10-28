@@ -1,0 +1,167 @@
+import { describe, expect, it } from 'vitest';
+import {
+  allCellIds,
+  cellExists,
+  cellLabel,
+  levelLabel,
+  orphanedItems,
+  placeLabel,
+} from '../src/lib/storage/layout';
+import { matchQuality, mergeCatalog, searchItems, suggest } from '../src/lib/storage/suggest';
+import { SYSTEM_ITEMS } from '../src/lib/storage/systemCatalog';
+import type { StorageCatalogEntry, StorageItem, StorageUnit } from '../src/lib/types';
+
+// Echoes the key plus its vars, so assertions don't depend on the dictionaries.
+const t = (key: string, vars?: Record<string, string | number>) =>
+  vars ? `${key}(${Object.values(vars).join(',')})` : key;
+
+const unit = (over: Partial<StorageUnit> = {}): StorageUnit => ({
+  id: 'u1',
+  name: 'Freezer',
+  kind: 'chest',
+  levels: 3,
+  rows: 1,
+  cols: 4,
+  categories: ['frozen'],
+  levelNames: {},
+  cellNames: {},
+  createdAt: 0,
+  createdBy: 'a',
+  ...over,
+});
+
+const item = (over: Partial<StorageItem> = {}): StorageItem => ({
+  id: 'i1',
+  unitId: 'u1',
+  cellId: '1.1.1',
+  name: 'Peas',
+  nameKey: 'peas',
+  qtyMode: 'count',
+  amount: 1,
+  unit: 'bag',
+  level: null,
+  expiry: null,
+  note: '',
+  addedAt: 0,
+  addedBy: 'a',
+  updatedAt: 0,
+  updatedBy: 'a',
+  ...over,
+});
+
+const groupEntry = (over: Partial<StorageCatalogEntry> = {}): StorageCatalogEntry => ({
+  id: 'x',
+  name: 'X',
+  categories: [],
+  unit: null,
+  count: 1,
+  lastUsed: 0,
+  unitIds: [],
+  ...over,
+});
+
+describe('storage layout', () => {
+  it('enumerates every cell of a 3×(1×4) chest freezer', () => {
+    const ids = allCellIds(unit());
+    expect(ids).toHaveLength(12);
+    expect(ids[0]).toBe('1.1.1');
+    expect(ids[11]).toBe('3.1.4');
+  });
+
+  it('knows which cells a shape has', () => {
+    expect(cellExists(unit(), '3.1.4')).toBe(true);
+    expect(cellExists(unit(), '4.1.1')).toBe(false);
+    expect(cellExists(unit(), 'garbage')).toBe(false);
+  });
+
+  it('flags items that a smaller shape would orphan', () => {
+    const items = [item({ cellId: '1.1.1' }), item({ id: 'i2', cellId: '3.1.4' })];
+    expect(orphanedItems({ levels: 2, rows: 1, cols: 4 }, items).map((i) => i.id)).toEqual(['i2']);
+    expect(orphanedItems({ levels: 3, rows: 1, cols: 4 }, items)).toEqual([]);
+  });
+
+  it('marks the top and bottom of stacked kinds', () => {
+    expect(levelLabel(unit(), 1, t)).toBe('storage.level.chest(1) (storage.top)');
+    expect(levelLabel(unit(), 2, t)).toBe('storage.level.chest(2)');
+    expect(levelLabel(unit({ kind: 'shelving' }), 1, t)).toBe('storage.level.shelving(1)');
+  });
+
+  it('prefers custom names and builds a breadcrumb', () => {
+    const u = unit({ cols: 2, levelNames: { '1': 'Meat' }, cellNames: { '1.1.2': 'Ice cream' } });
+    expect(cellLabel(u, '1.1.1', t)).toBe('storage.left');
+    expect(cellLabel(u, '1.1.2', t)).toBe('Ice cream');
+    expect(placeLabel(u, '1.1.2', t)).toBe('Freezer › Meat › Ice cream');
+  });
+});
+
+describe('storage autocomplete', () => {
+  const opts = (group: StorageCatalogEntry[] = [], locale: 'en' | 'hr' = 'en') => mergeCatalog(SYSTEM_ITEMS, group, locale);
+
+  it('grades matches from exact down to a one-letter typo', () => {
+    expect(matchQuality('peas', 'Peas')).toBe(4);
+    expect(matchQuality('chick', 'Chicken breast')).toBe(3);
+    expect(matchQuality('bre', 'Chicken breast')).toBe(2);
+    expect(matchQuality('chiken', 'Chicken breast')).toBe(0.5);
+    expect(matchQuality('xyz', 'Chicken breast')).toBe(0);
+  });
+
+  it("only suggests the unit's categories, counting what it hid", () => {
+    const { results, hiddenCount } = suggest('s', opts(), { unitCategories: ['frozen'], unitId: 'u1', showAll: false, limit: 50 });
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.every((r) => r.categories.includes('frozen'))).toBe(true);
+    expect(results.some((r) => r.name === 'Screws')).toBe(false);
+    expect(hiddenCount).toBeGreaterThan(0);
+
+    const all = suggest('screws', opts(), { unitCategories: ['frozen'], unitId: 'u1', showAll: true });
+    expect(all.results[0].name).toBe('Screws');
+  });
+
+  it("lets a group's own entry replace the system item it matches, in either language", () => {
+    const merged = opts([groupEntry({ id: 'grasak', name: 'Grašak', categories: [], count: 5, unitIds: ['u1'] })], 'en');
+    const peas = merged.filter((o) => o.name === 'Peas' || o.name === 'Grašak');
+    expect(peas).toHaveLength(1);
+    expect(peas[0]).toMatchObject({ source: 'group', name: 'Grašak', categories: ['frozen'], altNames: ['Peas'] });
+  });
+
+  it('ranks what this group already keeps in this unit first', () => {
+    const merged = opts([groupEntry({ id: 'pork chops', name: 'Pork chops', categories: ['frozen'], count: 3, unitIds: ['u1'] })]);
+    const { results } = suggest('p', merged, { unitCategories: ['frozen'], unitId: 'u1', showAll: false });
+    expect(results[0].name).toBe('Pork chops');
+  });
+
+  it("offers the group's usual items for this unit before anything is typed", () => {
+    const merged = opts([
+      groupEntry({ id: 'squid', name: 'Squid', categories: ['frozen'], count: 2, unitIds: ['u1'] }),
+      groupEntry({ id: 'hammer', name: 'Hammer', categories: ['tools'], count: 9, unitIds: ['garage'] }),
+    ]);
+    const { results } = suggest('', merged, { unitCategories: ['frozen'], unitId: 'u1', showAll: false });
+    expect(results.map((r) => r.name)).toEqual(['Squid']);
+  });
+
+  it('suggests everything for a unit with no categories', () => {
+    const { results } = suggest('screw', opts(), { unitCategories: [], unitId: 'u1', showAll: false });
+    expect(results.map((r) => r.name)).toContain('Screws');
+  });
+});
+
+describe('storage search', () => {
+  const items = [
+    item({ id: 'a', name: 'Chicken thighs', nameKey: 'chicken thighs' }),
+    item({ id: 'b', name: 'M6 screws', nameKey: 'm6 screws', note: 'stainless' }),
+    item({ id: 'c', name: 'Grašak', nameKey: 'grasak' }),
+  ];
+
+  it('matches word prefixes, notes and typos', () => {
+    expect(searchItems('chick', items).map((i) => i.id)).toEqual(['a']);
+    expect(searchItems('thi chi', items).map((i) => i.id)).toEqual(['a']);
+    expect(searchItems('stainless', items).map((i) => i.id)).toEqual(['b']);
+    expect(searchItems('screwz', items).map((i) => i.id)).toEqual(['b']);
+    expect(searchItems('grasak', items).map((i) => i.id)).toEqual(['c']);
+    expect(searchItems('', items)).toEqual([]);
+  });
+
+  it("finds an item by the catalog's other-language name", () => {
+    const options = mergeCatalog(SYSTEM_ITEMS, [], 'hr');
+    expect(searchItems('peas', items, options).map((i) => i.id)).toEqual(['c']);
+  });
+});

@@ -7,6 +7,7 @@
   let newExpenses = $state(true);
   let newPhotoSaving = $state(false);
   let newShoppingList = $state(false);
+  let newStorage = $state(false);
   let error = $state('');
   let saving = $state(false);
 
@@ -16,6 +17,7 @@
     newExpenses = true;
     newPhotoSaving = false;
     newShoppingList = false;
+    newStorage = false;
     error = '';
   }
 
@@ -29,6 +31,7 @@
         expenses: newExpenses,
         photoSaving: newPhotoSaving,
         shoppingList: newShoppingList,
+        storage: newStorage,
       });
       activeGroupId.set(id);
       creating = false;
@@ -62,6 +65,7 @@
       <label class="row"><input type="checkbox" bind:checked={newExpenses} /> {$t('groups.capabilityExpenses')}</label>
       <label class="row"><input type="checkbox" bind:checked={newPhotoSaving} /> {$t('groups.capabilityPhotoSaving')}</label>
       <label class="row"><input type="checkbox" bind:checked={newShoppingList} /> {$t('groups.capabilityShoppingList')}</label>
+      <label class="row"><input type="checkbox" bind:checked={newStorage} /> {$t('groups.capabilityStorage')}</label>
       {#if error}<p class="muted" style="color: var(--danger)">{error}</p>{/if}
       <div class="row">
         <button class="primary" type="submit" disabled={saving}>{$t('groups.create')}</button>

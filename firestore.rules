@@ -206,6 +206,38 @@ service cloud.firestore {
         function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
         allow read, write: if isGroupMember();
       }
+
+      // The group's "Storage" capability — units (shelving, freezer…), the
+      // items in their cells, the group's own catalog of item names and
+      // categories. Shared household stuff: any member can manage all of it,
+      // same trust level as shoppingItems.
+      match /storageUnits/{unitId} {
+        function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
+        allow read, write: if isGroupMember();
+      }
+      match /storageItems/{itemId} {
+        function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
+        allow read, write: if isGroupMember();
+      }
+      match /storageCatalog/{nameKey} {
+        function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
+        allow read, write: if isGroupMember();
+      }
+      match /storageCategories/{categoryId} {
+        function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
+        allow read, write: if isGroupMember();
+      }
+      // Append-only history of item adds/moves/edits/removals: a member can
+      // only add entries in their own name, and nobody can rewrite or delete
+      // one afterwards.
+      match /storageEvents/{eventId} {
+        function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
+        allow read: if isGroupMember();
+        allow create: if isGroupMember()
+          && request.resource.data.by == request.auth.uid
+          && request.resource.data.at is number;
+        allow update, delete: if false;
+      }
     }
   }
 }

@@ -80,6 +80,7 @@ currentUser.subscribe((user) => {
               expenses: data.capabilities?.expenses ?? true,
               photoSaving: data.capabilities?.photoSaving ?? false,
               shoppingList: data.capabilities?.shoppingList ?? false,
+              storage: data.capabilities?.storage ?? false,
             },
           };
         }),

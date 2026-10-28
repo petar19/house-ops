@@ -41,6 +41,9 @@
       {#if $activeGroup?.capabilities.shoppingList}
         <a href="/shopping" use:link use:active>{$t('nav.shopping')}</a>
       {/if}
+      {#if $activeGroup?.capabilities.storage}
+        <a href="/storage" use:link use:active={'/storage*'}>{$t('nav.storage')}</a>
+      {/if}
       {#if $activeGroup}
         <a href="/settings" use:link use:active>{$t('nav.settings')}</a>
       {/if}

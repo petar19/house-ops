@@ -22,6 +22,7 @@ export interface GroupCapabilities {
   expenses: boolean;
   photoSaving: boolean;
   shoppingList: boolean;
+  storage: boolean;
 }
 
 export interface Group {
@@ -229,4 +230,92 @@ export interface ShoppingItem {
   addedAt: number;
   reminderId: string | null;
   source: 'manual';
+}
+
+// ── Storage capability ────────────────────────────────────────────────────
+// A unit (pantry shelving, chest freezer, garage drawers…) is a fixed tree:
+// unit → level (shelf / layer / drawer / spot) → cell (a rows×cols grid
+// inside each level). The template numbers are all there is to its shape —
+// the 2D view is generated from them, nothing is modelled by hand. Cell ids
+// are "level.row.col", 1-based, so they stay stable while the unit only
+// grows; shrinking it is refused while items still sit in a removed cell.
+export type StorageUnitKind = 'shelving' | 'chest' | 'drawers' | 'custom';
+
+// groups/{groupId}/storageUnits/{id}
+export interface StorageUnit {
+  id: string;
+  name: string;
+  kind: StorageUnitKind;
+  levels: number;
+  rows: number;
+  cols: number;
+  // Storage category ids (system ids from storageCatalog.ts, or a doc id
+  // from storageCategories) — drive which catalog items autocomplete offers.
+  categories: string[];
+  levelNames: Record<string, string>; // key: level number as a string
+  cellNames: Record<string, string>; // key: cell id
+  createdAt: number;
+  createdBy: string;
+}
+
+export type StorageLevel = 'plenty' | 'some' | 'low' | 'empty';
+
+// groups/{groupId}/storageItems/{id} — one entry per thing per cell. The
+// same thing in two places is two entries; search shows both.
+export interface StorageItem {
+  id: string;
+  unitId: string;
+  cellId: string;
+  name: string;
+  nameKey: string; // normalizeText(name) — also the group catalog doc id
+  // Exact ("3 pcs", "500 g") or vague ("some") — switchable per item.
+  qtyMode: 'count' | 'level';
+  amount: number | null;
+  unit: string | null;
+  level: StorageLevel | null;
+  expiry: string | null; // ISO yyyy-MM-dd
+  note: string;
+  addedAt: number;
+  addedBy: string;
+  updatedAt: number;
+  updatedBy: string;
+}
+
+// groups/{groupId}/storageCatalog/{nameKey} — every name this group has
+// used, same aggregate idea as KnownName. Overrides the built-in system
+// catalog entry with the same key (so a group's own categories/unit win).
+export interface StorageCatalogEntry {
+  id: string;
+  name: string;
+  categories: string[];
+  unit: string | null;
+  count: number;
+  lastUsed: number;
+  unitIds: string[]; // storage units it has been put in — ranks it higher there
+}
+
+// groups/{groupId}/storageCategories/{id} — a group's own categories on top
+// of the built-in ones.
+export interface StorageCategory {
+  id: string;
+  name: string;
+}
+
+// groups/{groupId}/storageEvents/{id} — append-only history (rules allow
+// create only). Place labels are copied in as they were at the time, so the
+// log still reads right after a cell is renamed or a unit deleted.
+export interface StorageEvent {
+  id: string;
+  at: number;
+  by: string;
+  action: 'add' | 'remove' | 'move' | 'edit';
+  itemId: string;
+  itemName: string;
+  unitId: string;
+  cellId: string;
+  place: string;
+  toUnitId?: string;
+  toCellId?: string;
+  toPlace?: string;
+  changes?: Record<string, { from: unknown; to: unknown }>;
 }
