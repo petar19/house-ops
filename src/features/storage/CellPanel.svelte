@@ -284,7 +284,14 @@
               onclick={() => startEdit(item)}
               title={$t('storage.details')}
               aria-label={$t('storage.details')}
-            >ⓘ</button>
+            >
+              <!-- Drawn rather than the ⓘ character, which not every font has. -->
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2" />
+                <line x1="12" y1="11" x2="12" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                <circle cx="12" cy="7.5" r="1.3" fill="currentColor" />
+              </svg>
+            </button>
           </li>
         {/each}
       </ul>
@@ -420,8 +427,12 @@
     color: var(--danger);
   }
   .details {
-    padding: 0.25em 0.55em;
+    display: grid;
+    place-items: center;
+    padding: 0.3em 0.45em;
     flex: 0 0 auto;
+    color: var(--accent);
+    border-color: var(--accent);
   }
   .stepper {
     flex-wrap: nowrap;
