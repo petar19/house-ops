@@ -1,11 +1,14 @@
 <script lang="ts">
+  import { push } from 'svelte-spa-router';
   import { t } from '../../lib/i18n';
   import { activeGroup } from '../../lib/stores/groups';
   import {
     addItem,
     catalogOptions,
+    convertItemToContainer,
     loadItemHistory,
     moveItems,
+    placeUnit,
     removeItems,
     storageItems,
     storageUnits,
@@ -15,8 +18,10 @@
   } from '../../lib/stores/storage';
   import {
     SINGLE,
+    containersInCell,
     coveredCellIds,
     coversCell,
+    fullPlaceLabel,
     formatQty,
     isLow,
     isSpanning,
@@ -25,6 +30,9 @@
     spanBetween,
     spanFits,
     spanOf,
+    selfAndDescendants,
+    unitIcon,
+    unitLocationLabel,
   } from '../../lib/storage/layout';
   import { describeEvent } from '../../lib/storage/history';
   import { normalizeText } from '../../lib/utils/normalize';
@@ -32,6 +40,7 @@
   import type { StorageEvent, StorageItem, StorageLevel, StorageSpan, StorageUnit } from '../../lib/types';
   import ItemNameInput from './ItemNameInput.svelte';
   import QtyFields from './QtyFields.svelte';
+  import UnitEditor from './UnitEditor.svelte';
   import UnitGrid from './UnitGrid.svelte';
 
   // Everything about one cell: its items (quick +/−, level), multi-select
@@ -43,7 +52,14 @@
     cellId,
     highlightIds = new Set<string>(),
     readonly = false,
-  }: { unit: StorageUnit; cellId: string; highlightIds?: Set<string>; readonly?: boolean } = $props();
+    onShare,
+  }: {
+    unit: StorageUnit;
+    cellId: string;
+    highlightIds?: Set<string>;
+    readonly?: boolean;
+    onShare?: () => void;
+  } = $props();
 
   let groupId = $derived($activeGroup?.id ?? '');
   let placeOf = $derived(makePlaceOf($storageUnits, $t));
@@ -59,7 +75,42 @@
     return placeLabel(unit, item.cellId, $t, spanOf(item)).slice(unit.name.length + 3);
   }
 
-  let view = $state<'list' | 'edit' | 'move'>('list');
+  let view = $state<'list' | 'edit' | 'move' | 'newContainer'>('list');
+
+  // ── Containers in this cell ──
+  let containers = $derived(
+    containersInCell($storageUnits, unit.id, cellId).sort((a, b) => a.name.localeCompare(b.name)),
+  );
+  function contentCount(containerId: string): number {
+    return (
+      $storageItems.filter((i) => i.unitId === containerId).length +
+      $storageUnits.filter((u) => u.parent?.unitId === containerId).length
+    );
+  }
+  // Containers that could be put here: movable, not already here, and not
+  // this unit itself or anything this unit sits inside (no loops).
+  let placeable = $derived.by(() => {
+    const ancestorsAndSelf = new Set<string>();
+    for (const c of $storageUnits) {
+      if (selfAndDescendants($storageUnits, c.id).has(unit.id)) ancestorsAndSelf.add(c.id);
+    }
+    return $storageUnits
+      .filter((c) => c.movable && !ancestorsAndSelf.has(c.id) && !(c.parent?.unitId === unit.id && c.parent.cellId === cellId))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  });
+  let placingId = $state('');
+
+  function putContainerHere() {
+    const c = $storageUnits.find((u) => u.id === placingId);
+    if (!c) return;
+    run(async () => {
+      await placeUnit(groupId, c, { unitId: unit.id, cellId, span: null }, {
+        from: unitLocationLabel($storageUnits, c, $t) ?? $t('storage.loose'),
+        to: fullPlaceLabel($storageUnits, unit.id, cellId, $t),
+      });
+      placingId = '';
+    });
+  }
   let error = $state('');
   let busy = $state(false);
 
@@ -234,6 +285,15 @@
     return $activeGroup?.members[uid]?.displayName ?? '?';
   }
 
+  function makeContainer() {
+    const item = editing;
+    if (!item || !confirm($t('storage.makeContainerConfirm', { name: item.name }))) return;
+    run(async () => {
+      const id = await convertItemToContainer(groupId, item, placeOf);
+      push(`/storage/${id}`);
+    });
+  }
+
   function pickCorner(id: string) {
     ({ cellId: edCellId, span: edSpan } = spanBetween(edCorner, id));
   }
@@ -296,14 +356,30 @@
           <button class="primary" type="submit" disabled={busy}>{$t('common.save')}</button>
           <button type="button" onclick={() => (renaming = false)}>{$t('common.cancel')}</button>
         </form>
-      {:else if !readonly}
-        <span></span>
-        <button onclick={startRename}>✎ {$t('storage.renameCell')}</button>
+      {:else}
+        {#if onShare}<button onclick={onShare}>🔗 {$t('share.shareCell')}</button>{:else}<span></span>{/if}
+        {#if !readonly}<button onclick={startRename}>✎ {$t('storage.renameCell')}</button>{/if}
       {/if}
     </div>
 
-    {#if items.length === 0}
+    {#if containers.length > 0}
+      <ul class="containers">
+        {#each containers as c (c.id)}
+          <li>
+            <button class="container-link" onclick={() => push(`/storage/${c.id}`)}>
+              <span class="c-icon">{unitIcon(c)}</span>
+              <span class="c-name">{c.name}</span>
+              <span class="muted">{$t('storage.itemCount', { count: contentCount(c.id) })} ›</span>
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
+    {#if items.length === 0 && containers.length === 0}
       <p class="muted">{$t('storage.cellEmpty')}</p>
+    {:else if items.length === 0}
+      <!-- only containers here -->
     {:else}
       {#if !readonly}
       <div class="row bulk">
@@ -380,7 +456,22 @@
       <QtyFields bind:qtyMode={addMode} bind:amount={addAmount} bind:unit={addUnit} bind:level={addLevel} />
       <button class="primary" type="submit" disabled={busy || !addName.trim()}>{$t('common.add')}</button>
     </form>
+    <div class="row container-actions">
+      {#if placeable.length > 0}
+        <select bind:value={placingId} aria-label={$t('storage.putContainerHere')}>
+          <option value="">{$t('storage.putContainerHere')}…</option>
+          {#each placeable as c (c.id)}<option value={c.id}>{unitIcon(c)} {c.name}</option>{/each}
+        </select>
+        <button onclick={putContainerHere} disabled={busy || !placingId}>{$t('storage.putHere')}</button>
+      {/if}
+      <button onclick={() => (view = 'newContainer')}>+ {$t('storage.newContainerHere')}</button>
+    </div>
     {/if}
+  </div>
+{:else if view === 'newContainer'}
+  <div class="stack">
+    <UnitEditor placeIn={{ unitId: unit.id, cellId }} onDone={() => (view = 'list')} />
+    <button onclick={() => (view = 'list')}>{$t('common.cancel')}</button>
   </div>
 {:else if view === 'edit' && editing && readonly}
   <!-- View-only access: a plain summary rather than a greyed-out form. -->
@@ -446,9 +537,12 @@
         {/if}
       </div>
     </div>
-    <div class="row">
-      <button class="primary" type="submit" disabled={busy}>{$t('common.save')}</button>
-      <button type="button" onclick={() => (view = 'list')}>{$t('common.cancel')}</button>
+    <div class="row" style="justify-content: space-between">
+      <div class="row">
+        <button class="primary" type="submit" disabled={busy}>{$t('common.save')}</button>
+        <button type="button" onclick={() => (view = 'list')}>{$t('common.cancel')}</button>
+      </div>
+      <button type="button" onclick={makeContainer} disabled={busy} title={$t('storage.makeContainerHint')}>📦 {$t('storage.makeContainer')}</button>
     </div>
     {@render historyList()}
   </form>
@@ -523,6 +617,32 @@
   }
   .span-text {
     flex-basis: 100%;
+  }
+  .containers {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .container-link {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-align: left;
+  }
+  .c-icon {
+    font-size: 1.3em;
+  }
+  .c-name {
+    flex: 1;
+    font-weight: 600;
+  }
+  .container-actions select {
+    flex: 1 1 12rem;
+    width: auto;
   }
   .facts {
     display: grid;

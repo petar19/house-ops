@@ -5,6 +5,7 @@
     addCategory,
     createUnit,
     deleteUnit,
+    placeUnit,
     storageCategories,
     storageItems,
     storageUnits,
@@ -17,30 +18,53 @@
     MAX_COLS,
     MAX_LEVELS,
     MAX_ROWS,
+    UNIT_ICONS,
+    fullPlaceLabel,
     levelLabel,
     makePlaceOf,
+    orphanedContainers,
     orphanedItems,
+    placeableTargets,
+    unitLocationLabel,
   } from '../../lib/storage/layout';
   import { SYSTEM_CATEGORIES } from '../../lib/storage/systemCatalog';
-  import type { StorageUnit, StorageUnitKind } from '../../lib/types';
+  import type { StoragePlacement, StorageUnit, StorageUnitKind } from '../../lib/types';
+  import PlacePicker from './PlacePicker.svelte';
   import UnitGrid from './UnitGrid.svelte';
 
+  // `placeIn`: creating a new container straight into a cell ("New container
+  // here" from a cell) — it starts as a movable box already sitting there.
   let {
     unit = null,
+    placeIn = null,
     onDone,
     onDeleted,
-  }: { unit?: StorageUnit | null; onDone: (unitId: string) => void; onDeleted?: () => void } = $props();
+  }: {
+    unit?: StorageUnit | null;
+    placeIn?: StoragePlacement | null;
+    onDone: (unitId: string) => void;
+    onDeleted?: () => void;
+  } = $props();
 
   const KINDS: StorageUnitKind[] = ['shelving', 'chest', 'drawers', 'custom'];
 
   // Snapshot of the unit being edited — the form edits a copy, saved on submit.
   // svelte-ignore state_referenced_locally
   const start = unit;
+  // svelte-ignore state_referenced_locally
+  const startKind: StorageUnitKind = start?.kind ?? (placeIn ? 'custom' : 'shelving');
   let name = $state(start?.name ?? '');
-  let kind = $state<StorageUnitKind>(start?.kind ?? 'shelving');
-  let levels = $state(start?.levels ?? DEFAULT_SHAPES.shelving.levels);
-  let rows = $state(start?.rows ?? DEFAULT_SHAPES.shelving.rows);
-  let cols = $state(start?.cols ?? DEFAULT_SHAPES.shelving.cols);
+  let kind = $state<StorageUnitKind>(startKind);
+  let levels = $state(start?.levels ?? DEFAULT_SHAPES[startKind].levels);
+  let rows = $state(start?.rows ?? DEFAULT_SHAPES[startKind].rows);
+  let cols = $state(start?.cols ?? DEFAULT_SHAPES[startKind].cols);
+  let icon = $state<string | null>(start?.icon ?? null);
+  // "Other" units default to being containers; fixed furniture doesn't.
+  // svelte-ignore state_referenced_locally
+  let movable = $state(start?.movable ?? (startKind === 'custom' || !!placeIn));
+  let movableTouched = false;
+  let showIcons = $state(false);
+  let placing = $state(false);
   let categories = $state<string[]>(start?.categories ?? []);
   let levelNames = $state<Record<string, string>>({ ...(start?.levelNames ?? {}) });
   let newCategory = $state('');
@@ -55,6 +79,7 @@
   function pickKind(k: StorageUnitKind) {
     kind = k;
     if (!unit) ({ levels, rows, cols } = DEFAULT_SHAPES[k]);
+    if (!unit && !movableTouched && !placeIn) movable = k === 'custom';
     if (k === 'custom') {
       rows = 1;
       cols = 1;
@@ -64,7 +89,29 @@
   const clamp = (n: number, max: number) => Math.min(Math.max(Math.round(Number(n) || 1), 1), max);
   let shape = $derived({ levels: clamp(levels, MAX_LEVELS), rows: clamp(rows, MAX_ROWS), cols: clamp(cols, MAX_COLS) });
   let preview = $derived({ name, kind, ...shape, levelNames, cellNames: unit?.cellNames ?? {} });
-  let orphans = $derived(orphanedItems(shape, unitItems));
+  let orphans = $derived([
+    ...orphanedItems(shape, unitItems),
+    ...(unit ? orphanedContainers(shape, $storageUnits, unit.id) : []),
+  ]);
+  let location = $derived(unit ? unitLocationLabel($storageUnits, unit, $t) : null);
+  let targets = $derived(unit ? placeableTargets($storageUnits, unit) : []);
+
+  async function moveTo(parent: StoragePlacement | null) {
+    if (!unit || !groupId) return;
+    busy = true;
+    error = '';
+    try {
+      await placeUnit(groupId, unit, parent, {
+        from: location ?? $t('storage.loose'),
+        to: parent ? fullPlaceLabel($storageUnits, parent.unitId, parent.cellId, $t, parent.span) : $t('storage.loose'),
+      });
+      placing = false;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = false;
+    }
+  }
 
   function toggleCategory(id: string) {
     categories = categories.includes(id) ? categories.filter((c) => c !== id) : [...categories, id];
@@ -91,15 +138,16 @@
       const v = levelNames[String(l)]?.trim();
       if (v) cleanNames[String(l)] = v;
     }
-    const draft: UnitDraft = { name: name.trim(), kind, ...shape, categories, levelNames: cleanNames };
+    const draft: UnitDraft = { name: name.trim(), kind, ...shape, categories, levelNames: cleanNames, icon, movable };
     error = '';
     busy = true;
     try {
       if (unit) {
-        await updateUnit(groupId, unit.id, draft);
+        // No longer a container: it can't stay inside something.
+        await updateUnit(groupId, unit.id, movable ? draft : { ...draft, parent: null });
         onDone(unit.id);
       } else {
-        onDone(await createUnit(groupId, draft));
+        onDone(await createUnit(groupId, draft, movable ? placeIn : null));
       }
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -110,9 +158,10 @@
 
   async function handleDelete() {
     if (!unit || !groupId) return;
-    const msg = unitItems.length
+    const inner = $storageUnits.filter((u) => u.parent?.unitId === unit!.id).length;
+    const msg = (inner ? $t('storage.deleteKeepsContainers', { count: inner }) + '\n\n' : '') + (unitItems.length
       ? $t('storage.deleteUnitWithItems', { name: unit.name, count: unitItems.length })
-      : $t('storage.deleteUnitConfirm', { name: unit.name });
+      : $t('storage.deleteUnitConfirm', { name: unit.name }));
     if (!confirm(msg)) return;
     busy = true;
     try {
@@ -132,10 +181,23 @@
 </script>
 
 <form class="stack" onsubmit={handleSubmit}>
-  <label class="stack field">
-    <span class="muted">{$t('storage.unitName')}</span>
-    <input bind:value={name} placeholder={$t('storage.unitNamePlaceholder')} required />
-  </label>
+  <div class="row name-row">
+    <button type="button" class="icon-btn" onclick={() => (showIcons = !showIcons)} title={$t('storage.icon')} aria-label={$t('storage.icon')}>
+      {icon || KIND_ICONS[kind]}
+    </button>
+    <label class="stack field" style="flex:1">
+      <span class="muted">{$t('storage.unitName')}</span>
+      <input bind:value={name} placeholder={$t('storage.unitNamePlaceholder')} required />
+    </label>
+  </div>
+  {#if showIcons}
+    <div class="icons">
+      <button type="button" class:on={!icon} onclick={() => ((icon = null), (showIcons = false))}>{KIND_ICONS[kind]}</button>
+      {#each UNIT_ICONS as e (e)}
+        <button type="button" class:on={icon === e} onclick={() => ((icon = e), (showIcons = false))}>{e}</button>
+      {/each}
+    </div>
+  {/if}
 
   <div class="stack field">
     <span class="muted">{$t('storage.kind')}</span>
@@ -148,6 +210,30 @@
     </div>
     <span class="muted">{$t(`storage.kindHint.${kind}`)}</span>
   </div>
+
+  <label class="row">
+    <input type="checkbox" bind:checked={movable} onchange={() => (movableTouched = true)} />
+    <span>{$t('storage.movable')}</span>
+  </label>
+  {#if placeIn && !unit}
+    <p class="muted" style="margin:0">{$t('storage.willBePlaced', { place: fullPlaceLabel($storageUnits, placeIn.unitId, placeIn.cellId, $t) })}</p>
+  {/if}
+  {#if unit && movable}
+    <div class="stack field">
+      <span class="muted">{$t('storage.location')}</span>
+      {#if placing}
+        <PlacePicker {targets} span={unit.parent?.span ?? null} {busy} onConfirm={moveTo} onCancel={() => (placing = false)} />
+      {:else}
+        <div class="row">
+          <span>{location ?? $t('storage.loose')}</span>
+          <button type="button" onclick={() => (placing = true)} disabled={busy}>{location ? $t('storage.moveContainer') : $t('storage.putInto')}</button>
+          {#if location}
+            <button type="button" onclick={() => moveTo(null)} disabled={busy}>{$t('storage.takeOut')}</button>
+          {/if}
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   <div class="row dims">
     <label class="stack field">
@@ -235,6 +321,28 @@
     padding: 0.6rem;
     max-height: 18rem;
     overflow: auto;
+  }
+  .name-row {
+    align-items: flex-end;
+    flex-wrap: nowrap;
+  }
+  .icon-btn {
+    font-size: 1.5em;
+    padding: 0.2em 0.45em;
+    line-height: 1.2;
+  }
+  .icons {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(2.5rem, 1fr));
+    gap: 0.25rem;
+  }
+  .icons button {
+    font-size: 1.3em;
+    padding: 0.2em;
+  }
+  .icons button.on {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent) inset;
   }
   .chip {
     padding: 0.3em 0.75em;

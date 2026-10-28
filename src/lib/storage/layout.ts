@@ -168,13 +168,87 @@ export function placeLabel(unit: StorageUnit, id: string, t: Translate, span: St
 /** Resolves a unit + anchor cell (+ span) to its breadcrumb. */
 export type PlaceOf = (unitId: string, cellId: string, span?: StorageSpan | null) => string;
 
+// Containers nest, but a corrupt parent chain must never hang the UI.
+const MAX_DEPTH = 12;
+
+/**
+ * Breadcrumb through every container a place is inside, e.g. "Garage
+ * shelves › Shelf 2 › Left › Red toolbox › Top tray".
+ */
+export function fullPlaceLabel(units: StorageUnit[], unitId: string, id: string, t: Translate, span?: StorageSpan | null): string {
+  const parts: string[] = [];
+  let current: { unitId: string; cellId: string; span?: StorageSpan | null } | null = { unitId, cellId: id, span };
+  for (let depth = 0; current && depth < MAX_DEPTH; depth++) {
+    const here: { unitId: string; cellId: string; span?: StorageSpan | null } = current;
+    const unit = units.find((u) => u.id === here.unitId);
+    if (!unit) {
+      parts.unshift(here.cellId);
+      break;
+    }
+    parts.unshift(placeLabel(unit, here.cellId, t, here.span ?? SINGLE));
+    current = unit.parent ?? null;
+  }
+  return parts.join(' › ');
+}
+
+/** Where a unit itself sits ("Garage shelves › Shelf 2 › Left"), or null if loose. */
+export function unitLocationLabel(units: StorageUnit[], unit: StorageUnit, t: Translate): string | null {
+  return unit.parent ? fullPlaceLabel(units, unit.parent.unitId, unit.parent.cellId, t, unit.parent.span) : null;
+}
+
 /** Binds the current units + translator into a PlaceOf. */
 export function makePlaceOf(units: StorageUnit[], t: Translate): PlaceOf {
-  return (unitId, id, span) => {
-    const unit = units.find((u) => u.id === unitId);
-    return unit ? placeLabel(unit, id, t, span ?? SINGLE) : id;
-  };
+  return (unitId, id, span) => fullPlaceLabel(units, unitId, id, t, span);
 }
+
+// ── Containers ─────────────────────────────────────────────────────────────
+
+/** The unit and every container nested inside it, at any depth. */
+export function selfAndDescendants(units: StorageUnit[], unitId: string): Set<string> {
+  const found = new Set([unitId]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const u of units) {
+      if (u.parent && found.has(u.parent.unitId) && !found.has(u.id)) {
+        found.add(u.id);
+        grew = true;
+      }
+    }
+  }
+  return found;
+}
+
+/** Units a container may be put into: anything but itself or what's inside it. */
+export function placeableTargets(units: StorageUnit[], container: StorageUnit): StorageUnit[] {
+  const blocked = selfAndDescendants(units, container.id);
+  return units.filter((u) => !blocked.has(u.id));
+}
+
+/** Containers sitting in (or reaching into) a given cell of a unit. */
+export function containersInCell(units: StorageUnit[], unitId: string, id: string): StorageUnit[] {
+  return units.filter(
+    (u) => u.parent?.unitId === unitId && coveredCellIds(u.parent.cellId, u.parent.span ?? SINGLE).includes(id),
+  );
+}
+
+/** Containers that would no longer fit if `unitId` took a new shape. */
+export function orphanedContainers(shape: Omit<UnitShape, 'kind'>, units: StorageUnit[], unitId: string): StorageUnit[] {
+  return units.filter((u) => u.parent?.unitId === unitId && !spanFits(shape, u.parent.cellId, u.parent.span ?? SINGLE));
+}
+
+export function unitIcon(unit: Pick<StorageUnit, 'kind' | 'icon'>): string {
+  return unit.icon || KIND_ICONS[unit.kind];
+}
+
+// Picked from in the unit editor. Emoji has no coloured boxes, so the
+// coloured squares/circles serve as "the red one", "the blue one" markers.
+export const UNIT_ICONS = [
+  '📦', '🗃️', '🗄️', '🧰', '🧳', '💼', '👜', '👝', '🛍️', '🎒', '🧺', '🪣',
+  '🫙', '🥡', '🧊', '🍱', '🧵', '🔧', '🔌', '💊', '🎄', '🧸', '👟', '📚',
+  '🟥', '🟧', '🟨', '🟩', '🟦', '🟪', '🟫', '⬛', '⬜',
+  '🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '🟤', '⚫', '⚪',
+];
 
 export function formatQty(item: Pick<StorageItem, 'qtyMode' | 'amount' | 'unit' | 'level'>, t: Translate): string {
   if (item.qtyMode === 'level') return t(`storage.qty.${item.level ?? 'some'}`);
@@ -193,3 +267,14 @@ export const KIND_ICONS: Record<StorageUnitKind, string> = {
   drawers: '🗃️',
   custom: '📦',
 };
+
+/**
+ * A link straight to a unit (or one of its cells) that anyone in the group
+ * can open — what Share, the printed QR label and an NFC tag all carry. The
+ * group id rides along so the app switches to the right group on open.
+ */
+export function storageLink(origin: string, base: string, groupId: string, unitId: string, cellId?: string | null): string {
+  const query = new URLSearchParams({ group: groupId });
+  if (cellId) query.set('cell', cellId);
+  return `${origin}${base}#/storage/${unitId}?${query}`;
+}

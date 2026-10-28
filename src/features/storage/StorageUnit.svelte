@@ -1,12 +1,22 @@
 <script lang="ts">
   import { link, push, router } from 'svelte-spa-router';
   import { t } from '../../lib/i18n';
-  import { myAccess } from '../../lib/stores/groups';
+  import { activeGroupId, activeGroupResolvedId, myAccess, myGroups, myGroupsLoading } from '../../lib/stores/groups';
   import { catalogOptions, storageItems, storageLoading, storageUnits } from '../../lib/stores/storage';
-  import { KIND_ICONS, cellExists, cellLabel, coveredCellIds, levelLabel, parseCellId, spanOf } from '../../lib/storage/layout';
+  import {
+    cellExists,
+    cellLabel,
+    coveredCellIds,
+    levelLabel,
+    parseCellId,
+    spanOf,
+    unitIcon,
+    unitLocationLabel,
+  } from '../../lib/storage/layout';
   import { searchItems } from '../../lib/storage/suggest';
   import Modal from '../../lib/components/Modal.svelte';
   import CellPanel from './CellPanel.svelte';
+  import ShareLabel from './ShareLabel.svelte';
   import StorageHistory from './StorageHistory.svelte';
   import UnitEditor from './UnitEditor.svelte';
   import UnitGrid from './UnitGrid.svelte';
@@ -15,6 +25,35 @@
 
   let unit = $derived($storageUnits.find((u) => u.id === params.unitId) ?? null);
   let unitItems = $derived($storageItems.filter((i) => i.unitId === params.unitId));
+  let innerContainers = $derived($storageUnits.filter((u) => u.parent?.unitId === params.unitId));
+  let location = $derived(unit ? unitLocationLabel($storageUnits, unit, $t) : null);
+  let sharing = $state(false);
+  let shareCell = $state<string | null>(null);
+
+  // Shared links (and QR/NFC labels) carry ?group= so they open in the right
+  // group even if you were last looking at another one.
+  let linkGroup = $derived(new URLSearchParams(router.querystring ?? '').get('group'));
+  let notInLinkGroup = $derived(!!linkGroup && !$myGroupsLoading && !$myGroups.some((g) => g.id === linkGroup));
+  $effect(() => {
+    if (linkGroup && $myGroups.some((g) => g.id === linkGroup) && $activeGroupResolvedId !== linkGroup) {
+      activeGroupId.set(linkGroup);
+    }
+  });
+
+  // Going from one unit straight to another (opening a container, a history
+  // entry elsewhere) reuses this page — start fresh for the new unit.
+  // svelte-ignore state_referenced_locally
+  let shownUnitId = params.unitId;
+  $effect(() => {
+    if (params.unitId === shownUnitId) return;
+    shownUnitId = params.unitId;
+    const query = new URLSearchParams(router.querystring ?? '');
+    openCellId = query.get('cell');
+    q = query.get('q') ?? '';
+    editing = false;
+    showHistory = false;
+    sharing = false;
+  });
 
   // Arriving from a search result: ?cell= opens that cell, ?q= keeps the
   // matches highlighted.
@@ -48,14 +87,20 @@
 <div class="page stack">
   <a href="/storage" use:link class="muted back">← {$t('storage.title')}</a>
 
-  {#if $myAccess.storage === 'none'}
+  {#if notInLinkGroup}
+    <p class="muted">{$t('share.notInGroup')}</p>
+  {:else if $myAccess.storage === 'none'}
     <p class="muted">{$t('access.noAccess')}</p>
   {:else if !unit}
     <p class="muted">{$storageLoading ? $t('common.loading') : $t('storage.unitNotFound')}</p>
   {:else}
+    {#if unit.parent && location}
+      <a href="/storage/{unit.parent.unitId}?cell={unit.parent.cellId}" use:link class="muted inside">📍 {location}</a>
+    {/if}
     <div class="row" style="justify-content: space-between">
-      <h2 style="margin:0">{KIND_ICONS[unit.kind]} {unit.name}</h2>
+      <h2 style="margin:0">{unitIcon(unit)} {unit.name}</h2>
       <div class="row">
+        <button onclick={() => ((shareCell = null), (sharing = true))}>🔗 {$t('share.share')}</button>
         <button onclick={() => (showHistory = true)}>🕘 {$t('storage.unitHistory')}</button>
         {#if readonly}
           <span class="muted">{$t('access.viewOnly')}</span>
@@ -71,7 +116,7 @@
     {/if}
 
     <div class="card">
-      <UnitGrid {unit} items={unitItems} highlight={highlightCells} onPick={(id) => (openCellId = id)} />
+      <UnitGrid {unit} items={unitItems} containers={innerContainers} highlight={highlightCells} onPick={(id) => (openCellId = id)} />
     </div>
   {/if}
 </div>
@@ -80,7 +125,17 @@
   <Modal open={!!openCellId && cellExists(unit, openCellId)} onClose={() => (openCellId = null)} title={cellTitle}>
     {#snippet children()}
       {#key openCellId}
-        <CellPanel {unit} cellId={openCellId!} highlightIds={matchIds} {readonly} />
+        <CellPanel
+          {unit}
+          cellId={openCellId!}
+          highlightIds={matchIds}
+          {readonly}
+          onShare={() => {
+            shareCell = openCellId;
+            openCellId = null;
+            sharing = true;
+          }}
+        />
       {/key}
     {/snippet}
   </Modal>
@@ -88,6 +143,12 @@
   <Modal open={showHistory} onClose={() => (showHistory = false)} title={$t('storage.unitHistoryTitle', { name: unit.name })}>
     {#snippet children()}
       <StorageHistory unitId={unit.id} onOpenCell={openFromHistory} />
+    {/snippet}
+  </Modal>
+
+  <Modal open={sharing} onClose={() => (sharing = false)} title={$t('share.title')}>
+    {#snippet children()}
+      <ShareLabel {unit} groupId={$activeGroupResolvedId ?? ''} cellId={shareCell} />
     {/snippet}
   </Modal>
 
@@ -106,7 +167,8 @@
 {/if}
 
 <style>
-  .back {
+  .back,
+  .inside {
     text-decoration: none;
   }
 </style>

@@ -30,6 +30,7 @@ import type {
   StorageEvent,
   StorageItem,
   StorageLevel,
+  StoragePlacement,
   StorageSpan,
   StorageUnit,
   StorageUnitKind,
@@ -120,11 +121,14 @@ export interface UnitDraft {
   cols: number;
   categories: string[];
   levelNames: Record<string, string>;
+  icon: string | null;
+  movable: boolean;
 }
 
-export async function createUnit(groupId: string, draft: UnitDraft): Promise<string> {
+export async function createUnit(groupId: string, draft: UnitDraft, parent: StoragePlacement | null = null): Promise<string> {
   const ref = await addDoc(col(groupId, 'storageUnits'), {
     ...draft,
+    parent,
     cellNames: {},
     createdAt: Date.now(),
     createdBy: uid(),
@@ -135,15 +139,52 @@ export async function createUnit(groupId: string, draft: UnitDraft): Promise<str
 export async function updateUnit(
   groupId: string,
   unitId: string,
-  patch: Partial<UnitDraft> & { cellNames?: Record<string, string> },
+  patch: Partial<UnitDraft> & { cellNames?: Record<string, string>; parent?: StoragePlacement | null },
 ): Promise<void> {
   await updateDoc(doc(col(groupId, 'storageUnits'), unitId), patch);
 }
 
 /** Deletes the unit and everything in it, logging each item's removal. */
+/**
+ * Deletes the unit and the items directly in it, logging each removal.
+ * Containers sitting in it are kept, just taken out — they become loose,
+ * with their own contents untouched.
+ */
 export async function deleteUnit(groupId: string, unit: StorageUnit, items: StorageItem[], placeOf: PlaceOf): Promise<void> {
   await removeItems(groupId, items, placeOf);
-  await deleteDoc(doc(col(groupId, 'storageUnits'), unit.id));
+  const inside = get(storageUnits).filter((u) => u.parent?.unitId === unit.id);
+  const batch = writeBatch(db);
+  for (const child of inside) batch.update(doc(col(groupId, 'storageUnits'), child.id), { parent: null });
+  batch.delete(doc(col(groupId, 'storageUnits'), unit.id));
+  await batch.commit();
+}
+
+/**
+ * Puts a container into a cell of another unit, or takes it out (null).
+ * Its items stay attached to it, so they move along for free. Logged as a
+ * move between the two places, so it shows in both units' history.
+ */
+export async function placeUnit(
+  groupId: string,
+  unit: StorageUnit,
+  parent: StoragePlacement | null,
+  places: { from: string; to: string },
+): Promise<void> {
+  const batch = writeBatch(db);
+  batch.update(doc(col(groupId, 'storageUnits'), unit.id), { parent });
+  logEvent(batch, groupId, {
+    action: 'move',
+    itemId: unit.id,
+    itemName: unit.name,
+    // A loose container's "place" is the container itself.
+    unitId: unit.parent?.unitId ?? unit.id,
+    cellId: unit.parent?.cellId ?? '',
+    place: places.from,
+    toUnitId: parent?.unitId ?? unit.id,
+    toCellId: parent?.cellId ?? '',
+    toPlace: places.to,
+  });
+  await batch.commit();
 }
 
 export async function addCategory(groupId: string, name: string): Promise<string> {
@@ -405,4 +446,29 @@ export async function loadHistoryPage(
   }
   const events = [...byId.values()].sort((a, b) => b.at - a.at).slice(0, HISTORY_PAGE);
   return { events, hasMore: snaps.some((s) => s.size === HISTORY_PAGE) };
+}
+
+/**
+ * Turns an item (say a toolbox that was logged as a thing) into a container
+ * in the same spot, so things can go inside it. The item entry is removed
+ * (logged as such) and an empty one-spot container takes its place.
+ */
+export async function convertItemToContainer(groupId: string, item: StorageItem, placeOf: PlaceOf): Promise<string> {
+  const id = await createUnit(
+    groupId,
+    {
+      name: item.name,
+      kind: 'custom',
+      levels: 1,
+      rows: 1,
+      cols: 1,
+      categories: [],
+      levelNames: {},
+      icon: null,
+      movable: true,
+    },
+    { unitId: item.unitId, cellId: item.cellId, span: item.span ?? null },
+  );
+  await removeItems(groupId, [item], placeOf);
+  return id;
 }

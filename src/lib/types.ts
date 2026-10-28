@@ -258,8 +258,21 @@ export interface StorageUnit {
   categories: string[];
   levelNames: Record<string, string>; // key: level number as a string
   cellNames: Record<string, string>; // key: cell id
+  icon?: string | null; // emoji; falls back to the kind's icon
+  // A container (box, bag, tackle box…) that can be put into a cell of
+  // another unit; everything in it travels along when it's moved.
+  movable?: boolean;
+  // Where a movable unit currently sits. Null/absent = loose (top-level),
+  // which is also what every fixed unit (freezer, shelves) always is.
+  parent?: StoragePlacement | null;
   createdAt: number;
   createdBy: string;
+}
+
+export interface StoragePlacement {
+  unitId: string;
+  cellId: string;
+  span?: StorageSpan | null;
 }
 
 export type StorageLevel = 'plenty' | 'some' | 'low' | 'empty';

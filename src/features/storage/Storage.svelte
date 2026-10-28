@@ -3,7 +3,8 @@
   import { t } from '../../lib/i18n';
   import { activeGroup, myAccess } from '../../lib/stores/groups';
   import { catalogOptions, storageItems, storageLoading, storageUnits } from '../../lib/stores/storage';
-  import { KIND_ICONS, formatQty, isLow, makePlaceOf } from '../../lib/storage/layout';
+  import { formatQty, isLow, makePlaceOf, unitIcon, unitLocationLabel } from '../../lib/storage/layout';
+  import { matchQuality } from '../../lib/storage/suggest';
   import { searchItems } from '../../lib/storage/suggest';
   import Modal from '../../lib/components/Modal.svelte';
   import UnitEditor from './UnitEditor.svelte';
@@ -12,7 +13,11 @@
   let q = $state('');
   let creating = $state(false);
 
-  let units = $derived([...$storageUnits].sort((a, b) => a.name.localeCompare(b.name)));
+  // Containers sitting inside other units show up there, not as cards here.
+  let units = $derived([...$storageUnits].filter((u) => !u.parent).sort((a, b) => a.name.localeCompare(b.name)));
+  let containerResults = $derived(
+    q.trim() ? $storageUnits.filter((u) => matchQuality(q, u.name) > 0).sort((a, b) => a.name.localeCompare(b.name)) : [],
+  );
   let placeOf = $derived(makePlaceOf($storageUnits, $t));
   let results = $derived(
     searchItems(q, $storageItems, $catalogOptions).sort((a, b) => a.name.localeCompare(b.name)),
@@ -49,7 +54,13 @@
 
     {#if q.trim()}
       <div class="card stack">
-        {#if results.length === 0}
+        {#each containerResults as c (c.id)}
+          <button class="result" onclick={() => push(`/storage/${c.id}`)}>
+            <strong>{unitIcon(c)} {c.name}</strong>
+            <span class="muted">{unitLocationLabel($storageUnits, c, $t) ?? $t('storage.loose')}</span>
+          </button>
+        {/each}
+        {#if results.length === 0 && containerResults.length === 0}
           <p class="muted" style="margin:0">{$t('storage.noResults')}</p>
         {:else}
           {#each results as item (item.id)}
@@ -76,13 +87,18 @@
         {@const lowCount = unitItems.filter(isLow).length}
         <div class="card stack">
           <div class="row" style="justify-content: space-between">
-            <a href="/storage/{unit.id}" use:link class="unit-title">{KIND_ICONS[unit.kind]} {unit.name}</a>
+            <a href="/storage/{unit.id}" use:link class="unit-title">{unitIcon(unit)} {unit.name}</a>
             <span class="muted">
               {$t('storage.itemCount', { count: unitItems.length })}
               {#if lowCount > 0}· <span class="low">{$t('storage.lowCount', { count: lowCount })}</span>{/if}
             </span>
           </div>
-          <UnitGrid {unit} items={unitItems} compact onPick={(cellId) => openCell(unit.id, cellId)} />
+          <UnitGrid
+            {unit}
+            items={unitItems}
+            containers={$storageUnits.filter((c) => c.parent?.unitId === unit.id)}
+            compact
+            onPick={(cellId) => openCell(unit.id, cellId)} />
         </div>
       {/each}
     {/if}

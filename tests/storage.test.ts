@@ -10,6 +10,13 @@ import {
   placeLabel,
   spanBetween,
   spanFits,
+  containersInCell,
+  fullPlaceLabel,
+  orphanedContainers,
+  placeableTargets,
+  selfAndDescendants,
+  storageLink,
+  unitIcon,
 } from '../src/lib/storage/layout';
 import { matchQuality, mergeCatalog, searchItems, suggest } from '../src/lib/storage/suggest';
 import { SYSTEM_ITEMS } from '../src/lib/storage/systemCatalog';
@@ -232,6 +239,65 @@ describe('storage spans', () => {
     );
     expect(placeLabel(unit(), '1.1.3', t, { levels: 2, rows: 1, cols: 1 })).toBe(
       'Freezer › storage.level.chest(1) (storage.top) – storage.level.chest(2) › 3',
+    );
+  });
+});
+
+describe('storage containers', () => {
+  const shelves = unit({ id: 'shelves', name: 'Garage', kind: 'shelving', levels: 3, rows: 1, cols: 3 });
+  const toolbox = unit({ id: 'toolbox', name: 'Red toolbox', kind: 'custom', levels: 2, rows: 1, cols: 1, movable: true,
+    levelNames: { '1': 'Top tray' }, parent: { unitId: 'shelves', cellId: '2.1.1' } });
+  const tin = unit({ id: 'tin', name: 'Screw tin', kind: 'custom', levels: 1, rows: 1, cols: 1, movable: true,
+    parent: { unitId: 'toolbox', cellId: '1.1.1' } });
+  const freezer = unit({ id: 'freezer', name: 'Freezer' });
+  const units = [shelves, toolbox, tin, freezer];
+
+  it('labels a place through every container it is inside', () => {
+    expect(fullPlaceLabel(units, 'tin', '1.1.1', t)).toBe(
+      'Garage › storage.level.shelving(2) › storage.left › Red toolbox › Top tray › Screw tin › storage.level.custom(1)',
+    );
+  });
+
+  it("stops at a parent that doesn't exist instead of failing", () => {
+    const lost = unit({ id: 'lost', name: 'Lost box', kind: 'custom', levels: 1, rows: 1, cols: 1, parent: { unitId: 'gone', cellId: '1.1.1' } });
+    expect(fullPlaceLabel([lost], 'lost', '1.1.1', t)).toBe('1.1.1 › Lost box › storage.level.custom(1)');
+  });
+
+  it("never offers a container's own insides as somewhere to put it", () => {
+    expect([...selfAndDescendants(units, 'toolbox')].sort()).toEqual(['tin', 'toolbox']);
+    expect(placeableTargets(units, toolbox).map((u) => u.id).sort()).toEqual(['freezer', 'shelves']);
+    expect(placeableTargets(units, tin).map((u) => u.id).sort()).toEqual(['freezer', 'shelves', 'toolbox']);
+  });
+
+  it('survives a parent loop in bad data', () => {
+    const a = unit({ id: 'a', name: 'A', parent: { unitId: 'b', cellId: '1.1.1' } });
+    const b = unit({ id: 'b', name: 'B', parent: { unitId: 'a', cellId: '1.1.1' } });
+    expect(fullPlaceLabel([a, b], 'a', '1.1.1', t).split(' › ').length).toBeLessThan(40);
+    expect(selfAndDescendants([a, b], 'a')).toEqual(new Set(['a', 'b']));
+  });
+
+  it('finds containers in a cell, including ones spanning into it', () => {
+    const wide = unit({ id: 'wide', name: 'Wide crate', movable: true, parent: { unitId: 'shelves', cellId: '1.1.1', span: { levels: 1, rows: 1, cols: 2 } } });
+    expect(containersInCell([...units, wide], 'shelves', '1.1.2').map((u) => u.id)).toEqual(['wide']);
+    expect(containersInCell(units, 'shelves', '2.1.1').map((u) => u.id)).toEqual(['toolbox']);
+  });
+
+  it('blocks shrinking a unit out from under a container', () => {
+    expect(orphanedContainers({ levels: 1, rows: 1, cols: 3 }, units, 'shelves').map((u) => u.id)).toEqual(['toolbox']);
+    expect(orphanedContainers({ levels: 3, rows: 1, cols: 3 }, units, 'shelves')).toEqual([]);
+  });
+
+  it('uses a chosen icon over the kind default', () => {
+    expect(unitIcon({ kind: 'custom', icon: null })).toBe('📦');
+    expect(unitIcon({ kind: 'custom', icon: '🟥' })).toBe('🟥');
+  });
+
+  it('builds share links that carry the group and optional cell', () => {
+    expect(storageLink('https://x.github.io', '/house-ops/', 'g1', 'freezer')).toBe(
+      'https://x.github.io/house-ops/#/storage/freezer?group=g1',
+    );
+    expect(storageLink('https://x.github.io', '/house-ops/', 'g1', 'freezer', '2.1.3')).toBe(
+      'https://x.github.io/house-ops/#/storage/freezer?group=g1&cell=2.1.3',
     );
   });
 });

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from '../../lib/i18n';
-  import { cellLabel, coveredCellIds, isLow, isSpanning, levelCellIds, levelLabel, spanOf } from '../../lib/storage/layout';
+  import { SINGLE, cellLabel, coveredCellIds, isLow, isSpanning, levelCellIds, levelLabel, spanOf, unitIcon } from '../../lib/storage/layout';
   import type { StorageItem, StorageUnit } from '../../lib/types';
 
   // The 2D view of one unit, generated purely from its template numbers:
@@ -9,6 +9,7 @@
   let {
     unit,
     items,
+    containers = [],
     highlight = new Set<string>(),
     selected = null,
     disabledCell = null,
@@ -17,6 +18,7 @@
   }: {
     unit: Pick<StorageUnit, 'name' | 'kind' | 'levels' | 'rows' | 'cols' | 'levelNames' | 'cellNames'>;
     items: StorageItem[];
+    containers?: StorageUnit[]; // containers placed in this unit, shown before items
     highlight?: Set<string>;
     selected?: string | null;
     disabledCell?: string | null;
@@ -40,6 +42,19 @@
     return map;
   });
 
+  let containersByCell = $derived.by(() => {
+    const map = new Map<string, StorageUnit[]>();
+    for (const c of containers) {
+      if (!c.parent) continue;
+      for (const id of coveredCellIds(c.parent.cellId, c.parent.span ?? SINGLE)) {
+        const list = map.get(id) ?? [];
+        list.push(c);
+        map.set(id, list);
+      }
+    }
+    return map;
+  });
+
   // A level that is a single cell (drawers without compartments, custom
   // spots) shows its name inside the cell instead of as a separate heading.
   let singleCellLevels = $derived(unit.rows === 1 && unit.cols === 1);
@@ -56,28 +71,33 @@
       <div class="cells" style="grid-template-columns: repeat({unit.cols}, minmax({compact ? 2.5 : 3.75}rem, 1fr))">
         {#each levelCellIds(unit, level) as id (id)}
           {@const cellItems = byCell.get(id) ?? []}
+          {@const cellContainers = containersByCell.get(id) ?? []}
+          {@const total = cellItems.length + cellContainers.length}
           {@const label = singleCellLevels ? levelLabel(unit, level, $t) : cellLabel(unit, id, $t)}
           <button
             type="button"
             class="cell"
             class:highlight={highlight.has(id)}
             class:selected={selected === id}
-            class:empty={cellItems.length === 0}
+            class:empty={total === 0}
             disabled={disabledCell === id || !onPick}
             onclick={() => onPick?.(id)}
           >
             <span class="cell-head">
               <span class="cell-label">{label}</span>
-              {#if cellItems.length > 0}
-                <span class="count" class:low={cellItems.some(isLow)}>{cellItems.length}</span>
+              {#if total > 0}
+                <span class="count" class:low={cellItems.some(isLow)}>{total}</span>
               {/if}
             </span>
             {#if !compact}
-              {#each cellItems.slice(0, PREVIEW_NAMES) as item (item.id)}
+              {#each cellContainers.slice(0, PREVIEW_NAMES) as c (c.id)}
+                <span class="item-name container">{unitIcon(c)} {c.name}</span>
+              {/each}
+              {#each cellItems.slice(0, Math.max(PREVIEW_NAMES - cellContainers.length, 0)) as item (item.id)}
                 <span class="item-name" class:low={isLow(item)}>{#if isSpanning(item)}<span class="span-mark" title={$t('storage.spans')}>⧉</span> {/if}{item.name}</span>
               {/each}
-              {#if cellItems.length > PREVIEW_NAMES}
-                <span class="more">{$t('storage.more', { count: cellItems.length - PREVIEW_NAMES })}</span>
+              {#if total > PREVIEW_NAMES}
+                <span class="more">{$t('storage.more', { count: total - PREVIEW_NAMES })}</span>
               {/if}
             {/if}
           </button>
@@ -180,6 +200,9 @@
   }
   .item-name.low {
     color: var(--danger);
+  }
+  .item-name.container {
+    font-weight: 600;
   }
   .span-mark {
     color: var(--accent);
