@@ -9,6 +9,7 @@ import {
 } from '../src/lib/storage/layout';
 import { matchQuality, mergeCatalog, searchItems, suggest } from '../src/lib/storage/suggest';
 import { SYSTEM_ITEMS } from '../src/lib/storage/systemCatalog';
+import { describeEvent } from '../src/lib/storage/history';
 import type { StorageCatalogEntry, StorageItem, StorageUnit } from '../src/lib/types';
 
 // Echoes the key plus its vars, so assertions don't depend on the dictionaries.
@@ -163,5 +164,29 @@ describe('storage search', () => {
   it("finds an item by the catalog's other-language name", () => {
     const options = mergeCatalog(SYSTEM_ITEMS, [], 'hr');
     expect(searchItems('peas', items, options).map((i) => i.id)).toEqual(['c']);
+  });
+});
+
+describe('storage history wording', () => {
+  const ev = { id: 'e', at: 0, by: 'a', itemId: 'i', itemName: 'Peas', unitId: 'u1', cellId: '1.1.1', place: 'Freezer › Layer 1' };
+
+  it('describes a move by where it went', () => {
+    expect(describeEvent({ ...ev, action: 'move', toPlace: 'Freezer › Layer 2' }, t)).toBe(
+      'storage.history.move(Freezer › Layer 1,Freezer › Layer 2)',
+    );
+  });
+
+  it('spells out changed values, translating levels and hiding note text', () => {
+    const text = describeEvent(
+      {
+        ...ev,
+        action: 'edit',
+        changes: { amount: { from: 2, to: 3 }, level: { from: null, to: 'low' }, note: { from: '', to: 'secret' } },
+      },
+      t,
+    );
+    expect(text).toBe(
+      'storage.history.edit(storage.field.amount 2 → 3, storage.field.level — → storage.qty.low, storage.field.note,Freezer › Layer 1)',
+    );
   });
 });

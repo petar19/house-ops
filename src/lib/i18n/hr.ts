@@ -440,5 +440,12 @@ export const hr: Record<string, string> = {
   'storage.history.add': 'Dodano u {place}',
   'storage.history.remove': 'Uklonjeno iz {place}',
   'storage.history.move': 'Premješteno iz {from} u {to}',
-  'storage.history.edit': 'Promijenjeno: {fields}',
+  'storage.history.edit': 'Promijenjeno u {place}: {fields}',
+  'storage.historyTitle': 'Povijest',
+  'storage.unitHistory': 'Povijest',
+  'storage.unitHistoryTitle': 'Povijest — {name}',
+  'storage.loadMore': 'Učitaj starije',
+  'storage.details': 'Detalji i povijest',
+  'storage.mode.count': 'točna',
+  'storage.mode.level': 'okvirna',
 };

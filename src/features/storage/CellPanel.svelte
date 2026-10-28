@@ -14,6 +14,7 @@
     type ItemDraft,
   } from '../../lib/stores/storage';
   import { formatQty, isLow, makePlaceOf } from '../../lib/storage/layout';
+  import { describeEvent } from '../../lib/storage/history';
   import { normalizeText } from '../../lib/utils/normalize';
   import type { CatalogOption } from '../../lib/storage/suggest';
   import type { StorageEvent, StorageItem, StorageLevel, StorageUnit } from '../../lib/types';
@@ -199,17 +200,6 @@
     return $activeGroup?.members[uid]?.displayName ?? '?';
   }
 
-  function describe(ev: StorageEvent): string {
-    if (ev.action === 'move') return $t('storage.history.move', { from: ev.place, to: ev.toPlace ?? '' });
-    if (ev.action === 'edit') {
-      const fields = Object.keys(ev.changes ?? {})
-        .map((k) => $t(`storage.field.${k}`))
-        .join(', ');
-      return $t('storage.history.edit', { fields });
-    }
-    return $t(`storage.history.${ev.action}`, { place: ev.place });
-  }
-
   // ── Move ──
   let moveUnitId = $state('');
   let moveCellId = $state<string | null>(null);
@@ -289,6 +279,12 @@
                 {#each ['plenty', 'some', 'low', 'empty'] as l (l)}<option value={l}>{$t(`storage.qty.${l}`)}</option>{/each}
               </select>
             {/if}
+            <button
+              class="details"
+              onclick={() => startEdit(item)}
+              title={$t('storage.details')}
+              aria-label={$t('storage.details')}
+            >ⓘ</button>
           </li>
         {/each}
       </ul>
@@ -350,7 +346,7 @@
           {#each history as ev (ev.id)}
             <li>
               <span class="muted">{new Date(ev.at).toLocaleString()} · {memberName(ev.by)}</span>
-              <span>{describe(ev)}</span>
+              <span>{describeEvent(ev, $t)}</span>
             </li>
           {/each}
         </ul>
@@ -422,6 +418,10 @@
   }
   .low {
     color: var(--danger);
+  }
+  .details {
+    padding: 0.25em 0.55em;
+    flex: 0 0 auto;
   }
   .stepper {
     flex-wrap: nowrap;

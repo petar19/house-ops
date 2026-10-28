@@ -440,5 +440,12 @@ export const en: Record<string, string> = {
   'storage.history.add': 'Added to {place}',
   'storage.history.remove': 'Removed from {place}',
   'storage.history.move': 'Moved from {from} to {to}',
-  'storage.history.edit': 'Changed {fields}',
+  'storage.history.edit': 'Changed {fields} in {place}',
+  'storage.historyTitle': 'History',
+  'storage.unitHistory': 'History',
+  'storage.unitHistoryTitle': 'History — {name}',
+  'storage.loadMore': 'Load older',
+  'storage.details': 'Details & history',
+  'storage.mode.count': 'exact',
+  'storage.mode.level': 'rough',
 };

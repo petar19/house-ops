@@ -7,7 +7,9 @@ import {
   doc,
   getDocs,
   increment,
+  limit,
   onSnapshot,
+  orderBy,
   query,
   updateDoc,
   where,
@@ -348,4 +350,40 @@ export async function loadItemHistory(groupId: string, itemId: string): Promise<
   return snap.docs
     .map((d) => ({ id: d.id, ...(d.data() as Omit<StorageEvent, 'id'>) }))
     .sort((a, b) => b.at - a.at);
+}
+
+export const HISTORY_PAGE = 40;
+
+/**
+ * One newest-first page of the group's storage history, or one unit's (what
+ * happened in it, including things moved in from elsewhere). Pass the oldest
+ * `at` seen so far as `before` for the next page, along with the ids already
+ * shown: the cursor is inclusive (a bulk move can stamp many events with the
+ * same millisecond), so `seen` is what stops a page boundary repeating them.
+ */
+export async function loadHistoryPage(
+  groupId: string,
+  unitId: string | null,
+  before: number | null,
+  seen: Set<string>,
+): Promise<{ events: StorageEvent[]; hasMore: boolean }> {
+  const base = col(groupId, 'storageEvents');
+  const page = (field?: 'unitId' | 'toUnitId') =>
+    query(
+      base,
+      ...(field ? [where(field, '==', unitId)] : []),
+      ...(before !== null ? [where('at', '<=', before)] : []),
+      orderBy('at', 'desc'),
+      limit(HISTORY_PAGE),
+    );
+  const snaps = await Promise.all((unitId ? [page('unitId'), page('toUnitId')] : [page()]).map((q) => getDocs(q)));
+
+  const byId = new Map<string, StorageEvent>();
+  for (const snap of snaps) {
+    for (const d of snap.docs) {
+      if (!seen.has(d.id)) byId.set(d.id, { id: d.id, ...(d.data() as Omit<StorageEvent, 'id'>) });
+    }
+  }
+  const events = [...byId.values()].sort((a, b) => b.at - a.at).slice(0, HISTORY_PAGE);
+  return { events, hasMore: snaps.some((s) => s.size === HISTORY_PAGE) };
 }

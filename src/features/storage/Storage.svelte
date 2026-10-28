@@ -29,7 +29,10 @@
   <div class="row" style="justify-content: space-between">
     <h2 style="margin:0">{$t('storage.title')}</h2>
     {#if $activeGroup?.capabilities.storage}
-      <button class="primary" onclick={() => (creating = true)}>+ {$t('storage.newUnit')}</button>
+      <div class="row">
+        <a href="/storage/history" use:link class="button-link">🕘 {$t('storage.historyTitle')}</a>
+        <button class="primary" onclick={() => (creating = true)}>+ {$t('storage.newUnit')}</button>
+      </div>
     {/if}
   </div>
 
@@ -94,6 +97,14 @@
 </Modal>
 
 <style>
+  .button-link {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.55em 1em;
+    text-decoration: none;
+    color: var(--text);
+    background: var(--surface);
+  }
   .unit-title {
     font-weight: 600;
     text-decoration: none;

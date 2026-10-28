@@ -9,6 +9,7 @@ import Reminders from '../features/reminders/Reminders.svelte';
 import ShoppingList from '../features/shopping/ShoppingList.svelte';
 import Storage from '../features/storage/Storage.svelte';
 import StorageUnit from '../features/storage/StorageUnit.svelte';
+import StorageHistoryPage from '../features/storage/StorageHistoryPage.svelte';
 
 export const routes = {
   '/': ExpenseList,
@@ -16,6 +17,7 @@ export const routes = {
   '/documents': Documents,
   '/shopping': ShoppingList,
   '/storage': Storage,
+  '/storage/history': StorageHistoryPage,
   '/storage/:unitId': StorageUnit,
   '/reminders': Reminders,
   '/stats': Stats,

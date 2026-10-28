@@ -7,6 +7,7 @@
   import { searchItems } from '../../lib/storage/suggest';
   import Modal from '../../lib/components/Modal.svelte';
   import CellPanel from './CellPanel.svelte';
+  import StorageHistory from './StorageHistory.svelte';
   import UnitEditor from './UnitEditor.svelte';
   import UnitGrid from './UnitGrid.svelte';
 
@@ -21,6 +22,15 @@
   let q = $state(initial.get('q') ?? '');
   let openCellId = $state<string | null>(initial.get('cell'));
   let editing = $state(false);
+  let showHistory = $state(false);
+
+  // A history entry in this unit just opens the cell here; one that now
+  // lives in another unit navigates there.
+  function openFromHistory(unitId: string, cellId: string) {
+    showHistory = false;
+    if (unitId === params.unitId) openCellId = cellId;
+    else push(`/storage/${unitId}?cell=${cellId}`);
+  }
 
   let matches = $derived(searchItems(q, unitItems, $catalogOptions));
   let matchIds = $derived(new Set(matches.map((i) => i.id)));
@@ -44,7 +54,10 @@
   {:else}
     <div class="row" style="justify-content: space-between">
       <h2 style="margin:0">{KIND_ICONS[unit.kind]} {unit.name}</h2>
-      <button onclick={() => (editing = true)}>✎ {$t('common.edit')}</button>
+      <div class="row">
+        <button onclick={() => (showHistory = true)}>🕘 {$t('storage.unitHistory')}</button>
+        <button onclick={() => (editing = true)}>✎ {$t('common.edit')}</button>
+      </div>
     </div>
 
     <input type="search" bind:value={q} placeholder={$t('storage.filterPlaceholder')} />
@@ -64,6 +77,12 @@
       {#key openCellId}
         <CellPanel {unit} cellId={openCellId!} highlightIds={matchIds} />
       {/key}
+    {/snippet}
+  </Modal>
+
+  <Modal open={showHistory} onClose={() => (showHistory = false)} title={$t('storage.unitHistoryTitle', { name: unit.name })}>
+    {#snippet children()}
+      <StorageHistory unitId={unit.id} onOpenCell={openFromHistory} />
     {/snippet}
   </Modal>
 
