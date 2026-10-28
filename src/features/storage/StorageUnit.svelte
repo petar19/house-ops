@@ -8,6 +8,7 @@
     cellLabel,
     coveredCellIds,
     levelLabel,
+    isRoom,
     parseCellId,
     spanOf,
     unitIcon,
@@ -16,6 +17,7 @@
   import { searchItems } from '../../lib/storage/suggest';
   import Modal from '../../lib/components/Modal.svelte';
   import CellPanel from './CellPanel.svelte';
+  import RoomView from './RoomView.svelte';
   import ShareLabel from './ShareLabel.svelte';
   import StorageHistory from './StorageHistory.svelte';
   import UnitEditor from './UnitEditor.svelte';
@@ -27,6 +29,14 @@
   let unitItems = $derived($storageItems.filter((i) => i.unitId === params.unitId));
   let innerContainers = $derived($storageUnits.filter((u) => u.parent?.unitId === params.unitId));
   let location = $derived(unit ? unitLocationLabel($storageUnits, unit, $t) : null);
+  // Link back up to where this unit sits: a room is just its page, a cell
+  // of another unit opens that cell.
+  let parentHref = $derived.by(() => {
+    const parent = unit?.parent;
+    if (!parent) return '';
+    const parentUnit = $storageUnits.find((u) => u.id === parent.unitId);
+    return isRoom(parentUnit) ? `/storage/${parent.unitId}` : `/storage/${parent.unitId}?cell=${parent.cellId}`;
+  });
   let sharing = $state(false);
   let shareCell = $state<string | null>(null);
 
@@ -95,7 +105,7 @@
     <p class="muted">{$storageLoading ? $t('common.loading') : $t('storage.unitNotFound')}</p>
   {:else}
     {#if unit.parent && location}
-      <a href="/storage/{unit.parent.unitId}?cell={unit.parent.cellId}" use:link class="muted inside">📍 {location}</a>
+      <a href={parentHref} use:link class="muted inside">📍 {location}</a>
     {/if}
     <div class="row" style="justify-content: space-between">
       <h2 style="margin:0">{unitIcon(unit)} {unit.name}</h2>
@@ -110,6 +120,9 @@
       </div>
     </div>
 
+    {#if isRoom(unit)}
+      <RoomView room={unit} {readonly} />
+    {:else}
     <input type="search" bind:value={q} placeholder={$t('storage.filterPlaceholder')} />
     {#if q.trim()}
       <p class="muted" style="margin:0">{$t('storage.matchesHere', { count: matches.length })}</p>
@@ -118,11 +131,12 @@
     <div class="card">
       <UnitGrid {unit} items={unitItems} containers={innerContainers} highlight={highlightCells} onPick={(id) => (openCellId = id)} />
     </div>
+    {/if}
   {/if}
 </div>
 
 {#if unit}
-  <Modal open={!!openCellId && cellExists(unit, openCellId)} onClose={() => (openCellId = null)} title={cellTitle}>
+  <Modal open={!!openCellId && !isRoom(unit) && cellExists(unit, openCellId)} onClose={() => (openCellId = null)} title={cellTitle}>
     {#snippet children()}
       {#key openCellId}
         <CellPanel

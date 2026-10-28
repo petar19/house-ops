@@ -243,7 +243,11 @@ export interface ShoppingItem {
 // the 2D view is generated from them, nothing is modelled by hand. Cell ids
 // are "level.row.col", 1-based, so they stay stable while the unit only
 // grows; shrinking it is refused while items still sit in a removed cell.
-export type StorageUnitKind = 'shelving' | 'chest' | 'drawers' | 'custom';
+// 'room' is the top of the tree: no grid, it just holds other units (shelves,
+// a freezer, boxes) plus loose things (the vacuum on the floor). It has the
+// single cell 1.1.1, so units/items "in the room" sit there, and every
+// path below it starts with the room's name without anyone typing it.
+export type StorageUnitKind = 'shelving' | 'chest' | 'drawers' | 'custom' | 'room';
 
 // groups/{groupId}/storageUnits/{id}
 export interface StorageUnit {

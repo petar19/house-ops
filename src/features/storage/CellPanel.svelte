@@ -53,12 +53,16 @@
     highlightIds = new Set<string>(),
     readonly = false,
     onShare,
+    looseOnly = false,
   }: {
     unit: StorageUnit;
     cellId: string;
     highlightIds?: Set<string>;
     readonly?: boolean;
     onShare?: () => void;
+    // A room's page shows its storage as cards itself and embeds this panel
+    // just for the loose things (vacuum on the floor) — no container list.
+    looseOnly?: boolean;
   } = $props();
 
   let groupId = $derived($activeGroup?.id ?? '');
@@ -349,6 +353,7 @@
 
 {#if view === 'list'}
   <div class="stack">
+    {#if !looseOnly}
     <div class="row" style="justify-content: space-between">
       {#if renaming}
         <form class="row" style="flex:1" onsubmit={(e) => { e.preventDefault(); saveRename(); }}>
@@ -361,8 +366,9 @@
         {#if !readonly}<button onclick={startRename}>✎ {$t('storage.renameCell')}</button>{/if}
       {/if}
     </div>
+    {/if}
 
-    {#if containers.length > 0}
+    {#if containers.length > 0 && !looseOnly}
       <ul class="containers">
         {#each containers as c (c.id)}
           <li>
@@ -376,7 +382,7 @@
       </ul>
     {/if}
 
-    {#if items.length === 0 && containers.length === 0}
+    {#if items.length === 0 && (containers.length === 0 || looseOnly)}
       <p class="muted">{$t('storage.cellEmpty')}</p>
     {:else if items.length === 0}
       <!-- only containers here -->
@@ -456,6 +462,7 @@
       <QtyFields bind:qtyMode={addMode} bind:amount={addAmount} bind:unit={addUnit} bind:level={addLevel} />
       <button class="primary" type="submit" disabled={busy || !addName.trim()}>{$t('common.add')}</button>
     </form>
+    {#if !looseOnly}
     <div class="row container-actions">
       {#if placeable.length > 0}
         <select bind:value={placingId} aria-label={$t('storage.putContainerHere')}>
@@ -466,6 +473,7 @@
       {/if}
       <button onclick={() => (view = 'newContainer')}>+ {$t('storage.newContainerHere')}</button>
     </div>
+    {/if}
     {/if}
   </div>
 {:else if view === 'newContainer'}

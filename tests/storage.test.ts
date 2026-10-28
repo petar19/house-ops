@@ -17,6 +17,8 @@ import {
   selfAndDescendants,
   storageLink,
   unitIcon,
+  roomOf,
+  ROOM_CELL,
 } from '../src/lib/storage/layout';
 import { matchQuality, mergeCatalog, searchItems, suggest } from '../src/lib/storage/suggest';
 import { SYSTEM_ITEMS } from '../src/lib/storage/systemCatalog';
@@ -299,5 +301,34 @@ describe('storage containers', () => {
     expect(storageLink('https://x.github.io', '/house-ops/', 'g1', 'freezer', '2.1.3')).toBe(
       'https://x.github.io/house-ops/#/storage/freezer?group=g1&cell=2.1.3',
     );
+  });
+});
+
+describe('storage rooms', () => {
+  const living = unit({ id: 'living', name: 'Living room', kind: 'room', levels: 1, rows: 1, cols: 1 });
+  const cabinet = unit({ id: 'cabinet', name: 'TV cabinet', kind: 'drawers', levels: 3, rows: 1, cols: 1,
+    parent: { unitId: 'living', cellId: ROOM_CELL } });
+  const box = unit({ id: 'box', name: 'Cable box', kind: 'custom', levels: 1, rows: 1, cols: 1, movable: true,
+    parent: { unitId: 'cabinet', cellId: '2.1.1' } });
+  const loose = unit({ id: 'loose', name: 'Garage shelves', kind: 'shelving' });
+  const units = [living, cabinet, box, loose];
+
+  it('puts the room name at the front of every path without a cell label of its own', () => {
+    expect(placeLabel(living, ROOM_CELL, t)).toBe('Living room');
+    expect(fullPlaceLabel(units, 'cabinet', '2.1.1', t)).toBe('Living room › TV cabinet › storage.level.drawers(2)');
+    expect(fullPlaceLabel(units, 'box', '1.1.1', t)).toBe(
+      'Living room › TV cabinet › storage.level.drawers(2) › Cable box › storage.level.custom(1)',
+    );
+  });
+
+  it('finds the room a unit is in, however deep', () => {
+    expect(roomOf(units, 'box')?.id).toBe('living');
+    expect(roomOf(units, 'cabinet')?.id).toBe('living');
+    expect(roomOf(units, 'living')?.id).toBe('living');
+    expect(roomOf(units, 'loose')).toBeNull();
+  });
+
+  it('gives a room the door icon by default', () => {
+    expect(unitIcon(living)).toBe('🚪');
   });
 });

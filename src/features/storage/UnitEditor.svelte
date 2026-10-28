@@ -18,7 +18,10 @@
     MAX_COLS,
     MAX_LEVELS,
     MAX_ROWS,
+    ROOM_CELL,
     UNIT_ICONS,
+    isRoom,
+    roomOf,
     fullPlaceLabel,
     levelLabel,
     makePlaceOf,
@@ -37,22 +40,39 @@
   let {
     unit = null,
     placeIn = null,
+    initialKind = null,
     onDone,
     onDeleted,
   }: {
     unit?: StorageUnit | null;
     placeIn?: StoragePlacement | null;
+    initialKind?: StorageUnitKind | null;
     onDone: (unitId: string) => void;
     onDeleted?: () => void;
   } = $props();
 
-  const KINDS: StorageUnitKind[] = ['shelving', 'chest', 'drawers', 'custom'];
-
   // Snapshot of the unit being edited — the form edits a copy, saved on submit.
   // svelte-ignore state_referenced_locally
   const start = unit;
+  // New storage made from inside a room just goes into that room; made from
+  // a cell of a shelf etc. it's a container sitting in that cell.
   // svelte-ignore state_referenced_locally
-  const startKind: StorageUnitKind = start?.kind ?? (placeIn ? 'custom' : 'shelving');
+  const placeInRoom = !!placeIn && isRoom($storageUnits.find((u) => u.id === placeIn!.unitId));
+  // svelte-ignore state_referenced_locally
+  const placeInCell = !!placeIn && !placeInRoom;
+  // svelte-ignore state_referenced_locally
+  const startKind: StorageUnitKind = start?.kind ?? initialKind ?? (placeInCell ? 'custom' : 'shelving');
+  // A room stays a room (things are inside it), and nothing else can become
+  // one (it may itself be inside something). New units can be anything,
+  // except a room when it's being created inside something.
+  // svelte-ignore state_referenced_locally
+  const KINDS: StorageUnitKind[] = start
+    ? start.kind === 'room'
+      ? ['room']
+      : ['shelving', 'chest', 'drawers', 'custom']
+    : placeIn
+      ? ['shelving', 'chest', 'drawers', 'custom']
+      : ['room', 'shelving', 'chest', 'drawers', 'custom'];
   let name = $state(start?.name ?? '');
   let kind = $state<StorageUnitKind>(startKind);
   let levels = $state(start?.levels ?? DEFAULT_SHAPES[startKind].levels);
@@ -61,7 +81,15 @@
   let icon = $state<string | null>(start?.icon ?? null);
   // "Other" units default to being containers; fixed furniture doesn't.
   // svelte-ignore state_referenced_locally
-  let movable = $state(start?.movable ?? (startKind === 'custom' || !!placeIn));
+  let movable = $state(start?.movable ?? (startKind === 'custom' || placeInCell));
+  // Which room it's in. Only chosen directly when it isn't sitting inside
+  // another unit's cell — then its room is wherever that unit is.
+  // svelte-ignore state_referenced_locally
+  const startParentUnit = $storageUnits.find((u) => u.id === start?.parent?.unitId);
+  // svelte-ignore state_referenced_locally
+  let roomId = $state(isRoom(startParentUnit) ? startParentUnit!.id : placeInRoom ? placeIn!.unitId : '');
+  let insideNonRoom = $derived(!!unit?.parent && !isRoom($storageUnits.find((u) => u.id === unit!.parent!.unitId)));
+  let rooms = $derived($storageUnits.filter((u) => isRoom(u)).sort((a, b) => a.name.localeCompare(b.name)));
   let movableTouched = false;
   let showIcons = $state(false);
   let placing = $state(false);
@@ -79,7 +107,7 @@
   function pickKind(k: StorageUnitKind) {
     kind = k;
     if (!unit) ({ levels, rows, cols } = DEFAULT_SHAPES[k]);
-    if (!unit && !movableTouched && !placeIn) movable = k === 'custom';
+    if (!unit && !movableTouched && !placeInCell) movable = k === 'custom';
     if (k === 'custom') {
       rows = 1;
       cols = 1;
@@ -94,7 +122,8 @@
     ...(unit ? orphanedContainers(shape, $storageUnits, unit.id) : []),
   ]);
   let location = $derived(unit ? unitLocationLabel($storageUnits, unit, $t) : null);
-  let targets = $derived(unit ? placeableTargets($storageUnits, unit) : []);
+  // Rooms are picked with the room dropdown, not as a cell to put things in.
+  let targets = $derived(unit ? placeableTargets($storageUnits, unit).filter((u) => !isRoom(u)) : []);
 
   async function moveTo(parent: StoragePlacement | null) {
     if (!unit || !groupId) return;
@@ -111,6 +140,13 @@
     } finally {
       busy = false;
     }
+  }
+
+  // Taken off a shelf, a box stays in the room that shelf is in.
+  function takeOut() {
+    const room = unit?.parent ? roomOf($storageUnits, unit.parent.unitId) : null;
+    if (room) roomId = room.id;
+    moveTo(room ? { unitId: room.id, cellId: ROOM_CELL } : null);
   }
 
   function toggleCategory(id: string) {
@@ -138,16 +174,32 @@
       const v = levelNames[String(l)]?.trim();
       if (v) cleanNames[String(l)] = v;
     }
-    const draft: UnitDraft = { name: name.trim(), kind, ...shape, categories, levelNames: cleanNames, icon, movable };
+    const room = kind === 'room';
+    const draft: UnitDraft = room
+      ? { name: name.trim(), kind, ...DEFAULT_SHAPES.room, categories, levelNames: {}, icon, movable: false }
+      : { name: name.trim(), kind, ...shape, categories, levelNames: cleanNames, icon, movable };
+    const roomPlacement: StoragePlacement | null = !room && roomId ? { unitId: roomId, cellId: ROOM_CELL } : null;
     error = '';
     busy = true;
     try {
       if (unit) {
-        // No longer a container: it can't stay inside something.
-        await updateUnit(groupId, unit.id, movable ? draft : { ...draft, parent: null });
+        if (insideNonRoom && !movable) {
+          // No longer a container: it can't stay in another unit's cell.
+          await updateUnit(groupId, unit.id, { ...draft, parent: null });
+        } else {
+          await updateUnit(groupId, unit.id, draft);
+          // A different room: logged as a move, like moving a container.
+          if (!insideNonRoom && !room && (unit.parent?.unitId ?? '') !== roomId) {
+            await placeUnit(groupId, unit, roomPlacement, {
+              from: location ?? $t('storage.noRoom'),
+              to: roomPlacement ? fullPlaceLabel($storageUnits, roomId, ROOM_CELL, $t) : $t('storage.noRoom'),
+            });
+          }
+        }
         onDone(unit.id);
       } else {
-        onDone(await createUnit(groupId, draft, movable ? placeIn : null));
+        const parent = room ? null : placeInCell ? (movable ? placeIn : null) : roomPlacement;
+        onDone(await createUnit(groupId, draft, parent));
       }
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -211,24 +263,34 @@
     <span class="muted">{$t(`storage.kindHint.${kind}`)}</span>
   </div>
 
+  {#if kind !== 'room'}
+  {#if !insideNonRoom && !placeInCell}
+    <label class="stack field">
+      <span class="muted">{$t('storage.room')}</span>
+      <select bind:value={roomId}>
+        <option value="">{$t('storage.noRoom')}</option>
+        {#each rooms as r (r.id)}<option value={r.id}>{KIND_ICONS.room} {r.name}</option>{/each}
+      </select>
+    </label>
+  {/if}
   <label class="row">
     <input type="checkbox" bind:checked={movable} onchange={() => (movableTouched = true)} />
     <span>{$t('storage.movable')}</span>
   </label>
-  {#if placeIn && !unit}
+  {#if placeInCell && !unit}
     <p class="muted" style="margin:0">{$t('storage.willBePlaced', { place: fullPlaceLabel($storageUnits, placeIn.unitId, placeIn.cellId, $t) })}</p>
   {/if}
   {#if unit && movable}
     <div class="stack field">
-      <span class="muted">{$t('storage.location')}</span>
+      <span class="muted">{$t('storage.inside')}</span>
       {#if placing}
         <PlacePicker {targets} span={unit.parent?.span ?? null} {busy} onConfirm={moveTo} onCancel={() => (placing = false)} />
       {:else}
         <div class="row">
-          <span>{location ?? $t('storage.loose')}</span>
-          <button type="button" onclick={() => (placing = true)} disabled={busy}>{location ? $t('storage.moveContainer') : $t('storage.putInto')}</button>
-          {#if location}
-            <button type="button" onclick={() => moveTo(null)} disabled={busy}>{$t('storage.takeOut')}</button>
+          <span>{insideNonRoom ? location : $t('storage.notInside')}</span>
+          <button type="button" onclick={() => (placing = true)} disabled={busy}>{insideNonRoom ? $t('storage.moveContainer') : $t('storage.putInto')}</button>
+          {#if insideNonRoom}
+            <button type="button" onclick={takeOut} disabled={busy}>{$t('storage.takeOut')}</button>
           {/if}
         </div>
       {/if}
@@ -271,6 +333,7 @@
       {/each}
     </div>
   </details>
+  {/if}
 
   <div class="stack field">
     <span class="muted">{$t('storage.categories')}</span>

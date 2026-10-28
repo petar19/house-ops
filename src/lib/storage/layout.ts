@@ -19,7 +19,15 @@ export const DEFAULT_SHAPES: Record<StorageUnitKind, Omit<UnitShape, 'kind'>> = 
   chest: { levels: 3, rows: 1, cols: 4 },
   drawers: { levels: 4, rows: 1, cols: 1 },
   custom: { levels: 3, rows: 1, cols: 1 },
+  room: { levels: 1, rows: 1, cols: 1 },
 };
+
+/** The one cell of a room, where everything in it sits. */
+export const ROOM_CELL = '1.1.1';
+
+export function isRoom(unit: Pick<StorageUnit, 'kind'> | null | undefined): boolean {
+  return unit?.kind === 'room';
+}
 
 export function cellId(level: number, row: number, col: number): string {
   return `${level}.${row}.${col}`;
@@ -149,6 +157,8 @@ export function cellLabel(unit: Pick<StorageUnit, 'rows' | 'cols' | 'cellNames'>
  * as ranges: "Chest freezer › Layer 1 (top) – Layer 2 › 3".
  */
 export function placeLabel(unit: StorageUnit, id: string, t: Translate, span: StorageSpan = SINGLE): string {
+  // A room has no shelves or cells to name — being in it is just its name.
+  if (unit.kind === 'room') return unit.name;
   const p = parseCellId(id);
   const parts = [unit.name];
   if (p) {
@@ -266,6 +276,7 @@ export const KIND_ICONS: Record<StorageUnitKind, string> = {
   chest: '🧊',
   drawers: '🗃️',
   custom: '📦',
+  room: '🚪',
 };
 
 /**
@@ -277,4 +288,15 @@ export function storageLink(origin: string, base: string, groupId: string, unitI
   const query = new URLSearchParams({ group: groupId });
   if (cellId) query.set('cell', cellId);
   return `${origin}${base}#/storage/${unitId}?${query}`;
+}
+
+/** The room a unit is in, directly or through the units it sits inside. */
+export function roomOf(units: StorageUnit[], unitId: string): StorageUnit | null {
+  let current = units.find((u) => u.id === unitId);
+  for (let depth = 0; current && depth < MAX_DEPTH; depth++) {
+    if (current.kind === 'room') return current;
+    const parentId: string | undefined = current.parent?.unitId;
+    current = parentId ? units.find((u) => u.id === parentId) : undefined;
+  }
+  return null;
 }
