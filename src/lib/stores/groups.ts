@@ -14,7 +14,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { currentUser } from './auth';
-import type { Group, GroupCapabilities, GroupMember } from '../types';
+import type { AccessLevel, Group, GroupCapabilities, GroupFeature, GroupMember } from '../types';
+import { FEATURES, evenShares, featureAccess } from '../utils/access';
 
 export const myGroups = writable<Group[]>([]);
 export const myGroupsLoading = writable(true);
@@ -43,6 +44,22 @@ export const activeGroup = derived([myGroups, activeGroupId], ([$groups, $id]) =
 // based on "did the active group change" (expenses, nameAliases,
 // notifications) must key off this instead, or it re-reads on every no-op.
 export const activeGroupResolvedId = derived(activeGroup, (g) => g?.id ?? null);
+
+/** What the signed-in user may do with each feature of the active group. */
+export const myAccess = derived([activeGroup, currentUser], ([$group, $user]) =>
+  Object.fromEntries(
+    FEATURES.map((f) => [f, $group && $user ? featureAccess($group, $user.uid, f) : 'none']),
+  ) as Record<GroupFeature, AccessLevel>,
+);
+
+/**
+ * The active group's id, or null when the user can't see `feature` there —
+ * what a feature's data subscriptions key off, so someone without access
+ * never even queries (the rules would only reject it).
+ */
+export function groupIdFor(feature: GroupFeature) {
+  return derived([activeGroupResolvedId, myAccess], ([$id, $access]) => ($access[feature] !== 'none' ? $id : null));
+}
 
 // Keep activeGroupId in sync with whatever activeGroup resolves to (e.g. after
 // the previously-active group disappears or on first load).
@@ -95,10 +112,6 @@ currentUser.subscribe((user) => {
   );
 });
 
-function equalSplit(count: number): number {
-  return count === 0 ? 0 : Math.round((100 / count) * 100) / 100;
-}
-
 export async function createGroup(name: string, capabilities: GroupCapabilities): Promise<string> {
   const user = get(currentUser);
   if (!user || !user.email) throw new Error('Not signed in');
@@ -137,19 +150,15 @@ export async function inviteMemberByEmail(group: Group, rawEmail: string): Promi
   const profile = userDoc.data() as { displayName?: string; email: string };
 
   const newMemberUids = [...group.memberUids, uid];
-  const pct = equalSplit(newMemberUids.length);
+  const newMember: GroupMember = { role: 'member', expectedPct: 0, displayName: profile.displayName ?? email, email };
+  const shares = evenShares({ members: { ...group.members, [uid]: newMember } });
 
   const updates: Record<string, unknown> = {
     memberUids: newMemberUids,
-    [`members.${uid}`]: {
-      role: 'member',
-      expectedPct: pct,
-      displayName: profile.displayName ?? email,
-      email,
-    } satisfies GroupMember,
+    [`members.${uid}`]: { ...newMember, expectedPct: shares[uid] } satisfies GroupMember,
   };
   for (const existingUid of group.memberUids) {
-    updates[`members.${existingUid}.expectedPct`] = pct;
+    updates[`members.${existingUid}.expectedPct`] = shares[existingUid];
   }
 
   await updateDoc(doc(db, 'groups', group.id), updates);
@@ -157,13 +166,34 @@ export async function inviteMemberByEmail(group: Group, rawEmail: string): Promi
 
 export async function removeMember(group: Group, uid: string): Promise<void> {
   const remainingUids = group.memberUids.filter((u) => u !== uid);
-  const pct = equalSplit(remainingUids.length);
+  const { [uid]: _removed, ...remaining } = group.members;
+  const shares = evenShares({ members: remaining });
   const updates: Record<string, unknown> = {
     memberUids: remainingUids,
     [`members.${uid}`]: deleteField(),
   };
   for (const existingUid of remainingUids) {
-    updates[`members.${existingUid}.expectedPct`] = pct;
+    updates[`members.${existingUid}.expectedPct`] = shares[existingUid];
+  }
+  await updateDoc(doc(db, 'groups', group.id), updates);
+}
+
+/**
+ * Sets one member's access to one feature. Taking someone in or out of
+ * expenses re-splits the expected shares evenly among whoever is left in
+ * them, the same way inviting or removing a member already does.
+ */
+export async function setMemberAccess(group: Group, uid: string, feature: GroupFeature, level: AccessLevel): Promise<void> {
+  const member = group.members[uid];
+  if (!member) return;
+  const updates: Record<string, unknown> = { [`members.${uid}.access.${feature}`]: level };
+  const wasIn = (member.access?.expenses ?? 'edit') !== 'none';
+  const isIn = feature === 'expenses' ? level !== 'none' : wasIn;
+  if (wasIn !== isIn) {
+    const shares = evenShares({
+      members: { ...group.members, [uid]: { ...member, access: { ...member.access, [feature]: level } } },
+    });
+    for (const u of Object.keys(group.members)) updates[`members.${u}.expectedPct`] = shares[u];
   }
   await updateDoc(doc(db, 'groups', group.id), updates);
 }

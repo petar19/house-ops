@@ -8,7 +8,9 @@
     inviteMemberByEmail,
     removeMember,
     renameGroup,
+    myAccess,
     setGroupCapabilities,
+    setMemberAccess,
     setMemberExpectedPct,
     setMemberRole,
   } from '../../lib/stores/groups';
@@ -17,6 +19,8 @@
     enableNotifications,
     notificationPref,
   } from '../../lib/stores/notifications';
+  import { FEATURES, expenseMemberUids, memberAccess } from '../../lib/utils/access';
+  import type { AccessLevel, GroupFeature } from '../../lib/types';
   import UnmappedPayers from './UnmappedPayers.svelte';
   import WhatsAppBridge from './WhatsAppBridge.svelte';
   import PhotoSavingSettings from './PhotoSavingSettings.svelte';
@@ -85,6 +89,27 @@
     if (!confirm($t('groupDetail.deleteConfirm', { name: group.name }))) return;
     await deleteGroup(group.id);
     push('/');
+  }
+
+  const FEATURE_LABELS: Record<GroupFeature, string> = {
+    expenses: 'groups.capabilityExpenses',
+    photoSaving: 'groups.capabilityPhotoSaving',
+    shoppingList: 'groups.capabilityShoppingList',
+    storage: 'groups.capabilityStorage',
+  };
+  const LEVELS: AccessLevel[] = ['edit', 'view', 'none'];
+  let enabledFeatures = $derived(group ? FEATURES.filter((f) => group!.capabilities[f]) : []);
+  let payers = $derived(group ? expenseMemberUids(group) : []);
+  let accessError = $state('');
+
+  async function handleAccessChange(uid: string, feature: GroupFeature, level: AccessLevel) {
+    if (!group) return;
+    accessError = '';
+    try {
+      await setMemberAccess(group, uid, feature, level);
+    } catch (e) {
+      accessError = e instanceof Error ? e.message : String(e);
+    }
   }
 
   async function toggleCapability(key: 'expenses' | 'photoSaving' | 'shoppingList' | 'storage') {
@@ -165,7 +190,7 @@
           </div>
           {#if isAdmin}
             <div class="row">
-              {#if group.capabilities.expenses}
+              {#if group.capabilities.expenses && payers.includes(uid)}
                 <input
                   type="number"
                   style="width:5em"
@@ -181,7 +206,7 @@
                 <button class="danger" onclick={() => handleRemove(uid)}>{$t('common.remove')}</button>
               {/if}
             </div>
-          {:else if group.capabilities.expenses}
+          {:else if group.capabilities.expenses && payers.includes(uid)}
             <span class="muted">{member.expectedPct}%</span>
           {/if}
         </div>
@@ -193,7 +218,37 @@
       {/if}
     </div>
 
-    {#if group.capabilities.expenses}
+    {#if isAdmin && enabledFeatures.length > 0}
+      <div class="card stack">
+        <h3 style="margin:0">{$t('access.title')}</h3>
+        <p class="muted" style="margin:0">{$t('access.description')}</p>
+        {#each Object.entries(group.members) as [uid, member] (uid)}
+          <div class="access-member">
+            <strong>{member.displayName}</strong>
+            {#if member.role === 'admin'}
+              <span class="muted">{$t('access.adminFull')}</span>
+            {:else}
+              <div class="row">
+                {#each enabledFeatures as feature (feature)}
+                  <label class="access-pick">
+                    <span class="muted">{$t(FEATURE_LABELS[feature])}</span>
+                    <select
+                      value={memberAccess(group, uid, feature)}
+                      onchange={(e) => handleAccessChange(uid, feature, e.currentTarget.value as AccessLevel)}
+                    >
+                      {#each LEVELS as level (level)}<option value={level}>{$t(`access.level.${level}`)}</option>{/each}
+                    </select>
+                  </label>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/each}
+        {#if accessError}<p class="muted" style="color: var(--danger); margin:0">{accessError}</p>{/if}
+      </div>
+    {/if}
+
+    {#if $myAccess.expenses !== 'none'}
       <div class="card stack">
         <h3 style="margin:0">{$t('notifications.title')}</h3>
         <p class="muted">{$t('notifications.description')}</p>
@@ -236,3 +291,19 @@
     {/if}
   {/if}
 </div>
+
+<style>
+  .access-member {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border);
+  }
+  .access-pick {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    flex: 1 1 8rem;
+  }
+</style>

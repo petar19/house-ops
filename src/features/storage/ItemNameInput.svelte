@@ -100,8 +100,12 @@
 
 <style>
   .autocomplete {
-    flex: 1 1 10rem;
     min-width: 8rem;
+  }
+  /* Only grow sideways when sitting in a row (the add form). In a column the
+     same flex-basis would turn into 10rem of empty height under the input. */
+  :global(.row) > .autocomplete {
+    flex: 1 1 10rem;
   }
   /* In the page flow rather than a floating overlay: this input mostly
      lives inside a scrolling modal, where an absolutely positioned list

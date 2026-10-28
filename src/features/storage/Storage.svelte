@@ -1,7 +1,7 @@
 <script lang="ts">
   import { link, push } from 'svelte-spa-router';
   import { t } from '../../lib/i18n';
-  import { activeGroup } from '../../lib/stores/groups';
+  import { activeGroup, myAccess } from '../../lib/stores/groups';
   import { catalogOptions, storageItems, storageLoading, storageUnits } from '../../lib/stores/storage';
   import { KIND_ICONS, formatQty, isLow, makePlaceOf } from '../../lib/storage/layout';
   import { searchItems } from '../../lib/storage/suggest';
@@ -28,10 +28,12 @@
 <div class="page stack">
   <div class="row" style="justify-content: space-between">
     <h2 style="margin:0">{$t('storage.title')}</h2>
-    {#if $activeGroup?.capabilities.storage}
+    {#if $myAccess.storage !== 'none'}
       <div class="row">
         <a href="/storage/history" use:link class="button-link">🕘 {$t('storage.historyTitle')}</a>
-        <button class="primary" onclick={() => (creating = true)}>+ {$t('storage.newUnit')}</button>
+        {#if $myAccess.storage === 'edit'}
+          <button class="primary" onclick={() => (creating = true)}>+ {$t('storage.newUnit')}</button>
+        {/if}
       </div>
     {/if}
   </div>
@@ -40,6 +42,8 @@
     <p class="muted">{$t('exportImport.pickGroup')}</p>
   {:else if !$activeGroup.capabilities.storage}
     <p class="muted">{$t('storage.capabilityOff')}</p>
+  {:else if $myAccess.storage === 'none'}
+    <p class="muted">{$t('access.noAccess')}</p>
   {:else}
     <input type="search" bind:value={q} placeholder={$t('storage.searchPlaceholder')} />
 

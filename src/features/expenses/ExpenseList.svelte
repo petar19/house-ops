@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { activeGroup, myGroups, myGroupsLoading } from '../../lib/stores/groups';
+  import { replace } from 'svelte-spa-router';
+  import { activeGroup, myAccess, myGroups, myGroupsLoading } from '../../lib/stores/groups';
+  import { firstAvailableRoute } from '../../lib/utils/access';
   import { categories } from '../../lib/stores/categories';
   import {
     deleteExpense,
@@ -11,6 +13,14 @@
   import { locale, t } from '../../lib/i18n';
   import ExpenseForm from './ExpenseForm.svelte';
   import type { Expense } from '../../lib/types';
+
+  // This is also the start page — someone who can't see expenses here (the
+  // group doesn't use them, or an admin hid them from this member) lands on
+  // the first tab they can use instead.
+  $effect(() => {
+    if ($activeGroup && $myAccess.expenses === 'none') replace(firstAvailableRoute($myAccess));
+  });
+  let canEdit = $derived($myAccess.expenses === 'edit');
 
   let showForm = $state(false);
   let editingExpense = $state<Expense | null>(null);
@@ -61,7 +71,9 @@
   {:else if $activeGroup}
     <div class="row" style="justify-content: space-between">
       <h2 style="margin:0">{$activeGroup.name}</h2>
-      <button class="primary" onclick={startAdd}>{$t('expenseList.addExpense')}</button>
+      {#if canEdit}
+        <button class="primary" onclick={startAdd}>{$t('expenseList.addExpense')}</button>
+      {/if}
     </div>
 
     {#if showForm && !editingExpense}
@@ -110,10 +122,12 @@
                   {/each}
                 </div>
               {/if}
-              <div class="row">
-                <button onclick={() => startEdit(expense)}>{$t('common.edit')}</button>
-                <button class="danger" onclick={() => handleDelete(expense)}>{$t('common.delete')}</button>
-              </div>
+              {#if canEdit}
+                <div class="row">
+                  <button onclick={() => startEdit(expense)}>{$t('common.edit')}</button>
+                  <button class="danger" onclick={() => handleDelete(expense)}>{$t('common.delete')}</button>
+                </div>
+              {/if}
             </div>
           {/if}
         {/each}

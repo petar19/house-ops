@@ -36,8 +36,14 @@
 
   // Everything about one cell: its items (quick +/−, level), multi-select
   // move/delete, adding with autocomplete, and per-item edit + history.
-  let { unit, cellId, highlightIds = new Set<string>() }: { unit: StorageUnit; cellId: string; highlightIds?: Set<string> } =
-    $props();
+  // `readonly` (view-only storage access): everything shows, nothing edits —
+  // item details open as a plain summary with its history.
+  let {
+    unit,
+    cellId,
+    highlightIds = new Set<string>(),
+    readonly = false,
+  }: { unit: StorageUnit; cellId: string; highlightIds?: Set<string>; readonly?: boolean } = $props();
 
   let groupId = $derived($activeGroup?.id ?? '');
   let placeOf = $derived(makePlaceOf($storageUnits, $t));
@@ -261,6 +267,26 @@
   let unitsSorted = $derived([...$storageUnits].sort((a, b) => a.name.localeCompare(b.name)));
 </script>
 
+{#snippet historyList()}
+  <div class="stack">
+    <h3 style="margin:0">{$t('storage.history')}</h3>
+    {#if history === null}
+      <p class="muted">{$t('common.loading')}</p>
+    {:else if history.length === 0}
+      <p class="muted">{$t('storage.historyEmpty')}</p>
+    {:else}
+      <ul class="history">
+        {#each history as ev (ev.id)}
+          <li>
+            <span class="muted">{new Date(ev.at).toLocaleString()} · {memberName(ev.by)}</span>
+            <span>{describeEvent(ev, $t)}</span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </div>
+{/snippet}
+
 {#if view === 'list'}
   <div class="stack">
     <div class="row" style="justify-content: space-between">
@@ -270,7 +296,7 @@
           <button class="primary" type="submit" disabled={busy}>{$t('common.save')}</button>
           <button type="button" onclick={() => (renaming = false)}>{$t('common.cancel')}</button>
         </form>
-      {:else}
+      {:else if !readonly}
         <span></span>
         <button onclick={startRename}>✎ {$t('storage.renameCell')}</button>
       {/if}
@@ -279,6 +305,7 @@
     {#if items.length === 0}
       <p class="muted">{$t('storage.cellEmpty')}</p>
     {:else}
+      {#if !readonly}
       <div class="row bulk">
         <label class="row">
           <input type="checkbox" checked={selectedItems.length === items.length} onchange={toggleAll} />
@@ -290,18 +317,23 @@
           <button class="danger" onclick={deleteSelected} disabled={busy}>{$t('common.delete')}</button>
         {/if}
       </div>
+      {/if}
 
       <ul class="items">
         {#each items as item (item.id)}
           <li class:hit={highlightIds.has(item.id)}>
-            <input type="checkbox" checked={selectedIds.has(item.id)} onchange={() => toggle(item.id)} aria-label={item.name} />
+            {#if !readonly}
+              <input type="checkbox" checked={selectedIds.has(item.id)} onchange={() => toggle(item.id)} aria-label={item.name} />
+            {/if}
             <button class="name" onclick={() => startEdit(item)}>
               <span class:low={isLow(item)}>{#if isSpanning(item)}<span class="span-mark">⧉</span> {/if}{item.name}</span>
               {#if isSpanning(item)}<span class="muted span-text">{$t('storage.spansOver', { place: spanText(item) })}</span>{/if}
               {#if item.expiry}<span class="muted">· {$t('storage.expires', { date: item.expiry })}</span>{/if}
               {#if item.note}<span class="muted note">{item.note}</span>{/if}
             </button>
-            {#if item.qtyMode === 'count'}
+            {#if readonly}
+              <span class="qty">{formatQty(item, $t)}</span>
+            {:else if item.qtyMode === 'count'}
               <div class="row stepper">
                 <button onclick={() => step(item, -1)} disabled={busy} aria-label={$t('storage.decrease')}>−</button>
                 <span class="qty">{formatQty(item, $t)}</span>
@@ -335,6 +367,7 @@
       </ul>
     {/if}
 
+    {#if !readonly}
     <form class="row add" onsubmit={handleAdd}>
       <ItemNameInput
         bind:value={addName}
@@ -347,6 +380,33 @@
       <QtyFields bind:qtyMode={addMode} bind:amount={addAmount} bind:unit={addUnit} bind:level={addLevel} />
       <button class="primary" type="submit" disabled={busy || !addName.trim()}>{$t('common.add')}</button>
     </form>
+    {/if}
+  </div>
+{:else if view === 'edit' && editing && readonly}
+  <!-- View-only access: a plain summary rather than a greyed-out form. -->
+  <div class="stack">
+    <dl class="facts">
+      <dt>{$t('storage.field.name')}</dt>
+      <dd>{editing.name}</dd>
+      <dt>{$t('storage.quantity')}</dt>
+      <dd>{formatQty(editing, $t)}</dd>
+      {#if editing.expiry}
+        <dt>{$t('storage.field.expiry')}</dt>
+        <dd>{editing.expiry}</dd>
+      {/if}
+      {#if editing.note}
+        <dt>{$t('storage.field.note')}</dt>
+        <dd>{editing.note}</dd>
+      {/if}
+      {#if isSpanning(editing)}
+        <dt>{$t('storage.space')}</dt>
+        <dd>{spanText(editing)}</dd>
+      {/if}
+    </dl>
+    <div class="row">
+      <button type="button" onclick={() => (view = 'list')}>← {$t('access.back')}</button>
+    </div>
+    {@render historyList()}
   </div>
 {:else if view === 'edit' && editing}
   <form class="stack" onsubmit={saveEdit}>
@@ -390,24 +450,7 @@
       <button class="primary" type="submit" disabled={busy}>{$t('common.save')}</button>
       <button type="button" onclick={() => (view = 'list')}>{$t('common.cancel')}</button>
     </div>
-
-    <div class="stack">
-      <h3 style="margin:0">{$t('storage.history')}</h3>
-      {#if history === null}
-        <p class="muted">{$t('common.loading')}</p>
-      {:else if history.length === 0}
-        <p class="muted">{$t('storage.historyEmpty')}</p>
-      {:else}
-        <ul class="history">
-          {#each history as ev (ev.id)}
-            <li>
-              <span class="muted">{new Date(ev.at).toLocaleString()} · {memberName(ev.by)}</span>
-              <span>{describeEvent(ev, $t)}</span>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </div>
+    {@render historyList()}
   </form>
 {:else if view === 'move'}
   <div class="stack">
@@ -480,6 +523,18 @@
   }
   .span-text {
     flex-basis: 100%;
+  }
+  .facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.35rem 1rem;
+    margin: 0;
+  }
+  .facts dt {
+    color: var(--text-dim);
+  }
+  .facts dd {
+    margin: 0;
   }
   .details {
     display: grid;

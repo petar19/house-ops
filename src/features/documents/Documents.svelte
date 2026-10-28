@@ -1,7 +1,7 @@
 <script lang="ts">
   import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
   import { db } from '../../lib/firebase';
-  import { activeGroup } from '../../lib/stores/groups';
+  import { activeGroup, myAccess } from '../../lib/stores/groups';
   import { locale, t } from '../../lib/i18n';
   import type { DocumentRecord, DocumentVendor } from '../../lib/types';
 
@@ -23,7 +23,7 @@
 
   let lastLoadedGroupId: string | null = null;
   $effect(() => {
-    const groupId = $activeGroup?.id ?? null;
+    const groupId = $myAccess.photoSaving !== 'none' ? ($activeGroup?.id ?? null) : null;
     if (groupId !== lastLoadedGroupId) {
       lastLoadedGroupId = groupId;
       selectedVendor = null;
@@ -89,6 +89,8 @@
     <p class="muted">{$t('exportImport.pickGroup')}</p>
   {:else if !$activeGroup.capabilities.photoSaving}
     <p class="muted">{$t('documents.capabilityOff')}</p>
+  {:else if $myAccess.photoSaving === 'none'}
+    <p class="muted">{$t('access.noAccess')}</p>
   {:else if selectedVendor}
     <div class="row">
       <button onclick={backToVendors}>← {$t('documents.backToVendors')}</button>

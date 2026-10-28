@@ -3,7 +3,7 @@ import { arrayUnion, doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { getMessaging, getToken, isSupported } from 'firebase/messaging';
 import { app, db, VAPID_KEY } from '../firebase';
 import { currentUser } from './auth';
-import { activeGroupResolvedId } from './groups';
+import { groupIdFor } from './groups';
 import type { NotificationPref } from '../types';
 
 export const notificationPref = writable<NotificationPref | null>(null);
@@ -13,7 +13,7 @@ export const notificationPermission = writable<NotificationPermission | 'unsuppo
 
 let unsubPref: (() => void) | null = null;
 
-activeGroupResolvedId.subscribe((groupId) => {
+groupIdFor('expenses').subscribe((groupId) => {
   if (unsubPref) {
     unsubPref();
     unsubPref = null;

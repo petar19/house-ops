@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { activeGroup } from '../../lib/stores/groups';
+  import { activeGroup, myAccess } from '../../lib/stores/groups';
+  import { expenseMemberUids } from '../../lib/utils/access';
   import { expenses, knownNames, loadFullExpenseHistory } from '../../lib/stores/expenses';
   import { categories } from '../../lib/stores/categories';
   import { nameAliases, saveAlias } from '../../lib/stores/nameAliases';
@@ -115,6 +116,8 @@
 
   {#if !$activeGroup}
     <p class="muted">{$t('stats.pickGroup')}</p>
+  {:else if $myAccess.expenses === 'none'}
+    <p class="muted">{$t('access.noAccess')}</p>
   {:else}
     <div class="card stack">
       <MonthPicker onSelect={(f, toDate) => { from = f; to = toDate; }} />
@@ -157,7 +160,7 @@
       {#if $activeGroup}
         <div class="row">
           <span class="muted">{$t('stats.spenderLabel')}</span>
-          {#each Object.entries($activeGroup.members) as [uid, member] (uid)}
+          {#each Object.entries($activeGroup.members).filter(([uid]) => expenseMemberUids($activeGroup!).includes(uid)) as [uid, member] (uid)}
             <button
               type="button"
               onclick={() => (selectedSpenders = toggle(selectedSpenders, uid))}
@@ -207,7 +210,7 @@
           <span>{currency.format(agg.total)} <span class="muted">({agg.count})</span></span>
         </div>
       {/each}
-      {#if clustersToReview().length > 0}
+      {#if $myAccess.expenses === 'edit' && clustersToReview().length > 0}
         <details>
           <summary class="muted">{$t('stats.suggestedGroupings', { count: clustersToReview().length })}</summary>
           <div class="stack">

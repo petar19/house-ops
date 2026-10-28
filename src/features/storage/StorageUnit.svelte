@@ -1,7 +1,7 @@
 <script lang="ts">
   import { link, push, router } from 'svelte-spa-router';
   import { t } from '../../lib/i18n';
-  import { activeGroup } from '../../lib/stores/groups';
+  import { myAccess } from '../../lib/stores/groups';
   import { catalogOptions, storageItems, storageLoading, storageUnits } from '../../lib/stores/storage';
   import { KIND_ICONS, cellExists, cellLabel, coveredCellIds, levelLabel, parseCellId, spanOf } from '../../lib/storage/layout';
   import { searchItems } from '../../lib/storage/suggest';
@@ -22,6 +22,7 @@
   let q = $state(initial.get('q') ?? '');
   let openCellId = $state<string | null>(initial.get('cell'));
   let editing = $state(false);
+  let readonly = $derived($myAccess.storage !== 'edit');
   let showHistory = $state(false);
 
   // A history entry in this unit just opens the cell here; one that now
@@ -47,8 +48,8 @@
 <div class="page stack">
   <a href="/storage" use:link class="muted back">← {$t('storage.title')}</a>
 
-  {#if !$activeGroup?.capabilities.storage}
-    <p class="muted">{$t('storage.capabilityOff')}</p>
+  {#if $myAccess.storage === 'none'}
+    <p class="muted">{$t('access.noAccess')}</p>
   {:else if !unit}
     <p class="muted">{$storageLoading ? $t('common.loading') : $t('storage.unitNotFound')}</p>
   {:else}
@@ -56,7 +57,11 @@
       <h2 style="margin:0">{KIND_ICONS[unit.kind]} {unit.name}</h2>
       <div class="row">
         <button onclick={() => (showHistory = true)}>🕘 {$t('storage.unitHistory')}</button>
-        <button onclick={() => (editing = true)}>✎ {$t('common.edit')}</button>
+        {#if readonly}
+          <span class="muted">{$t('access.viewOnly')}</span>
+        {:else}
+          <button onclick={() => (editing = true)}>✎ {$t('common.edit')}</button>
+        {/if}
       </div>
     </div>
 
@@ -75,7 +80,7 @@
   <Modal open={!!openCellId && cellExists(unit, openCellId)} onClose={() => (openCellId = null)} title={cellTitle}>
     {#snippet children()}
       {#key openCellId}
-        <CellPanel {unit} cellId={openCellId!} highlightIds={matchIds} />
+        <CellPanel {unit} cellId={openCellId!} highlightIds={matchIds} {readonly} />
       {/key}
     {/snippet}
   </Modal>
@@ -86,7 +91,7 @@
     {/snippet}
   </Modal>
 
-  <Modal open={editing} onClose={() => (editing = false)} title={$t('storage.editUnit')}>
+  <Modal open={editing && !readonly} onClose={() => (editing = false)} title={$t('storage.editUnit')}>
     {#snippet children()}
       <UnitEditor
         {unit}

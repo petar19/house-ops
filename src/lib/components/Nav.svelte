@@ -2,7 +2,7 @@
   import { link } from 'svelte-spa-router';
   import active from 'svelte-spa-router/active';
   import { allowedRole, currentUser, signOutUser } from '../stores/auth';
-  import { activeGroup } from '../stores/groups';
+  import { activeGroup, myAccess } from '../stores/groups';
   import { t } from '../i18n';
   import LanguagePicker from './LanguagePicker.svelte';
   import GroupSwitcher from './GroupSwitcher.svelte';
@@ -30,18 +30,18 @@
     </div>
     <GroupSwitcher />
     <nav>
-      {#if $activeGroup?.capabilities.expenses}
+      {#if $myAccess.expenses !== 'none'}
         <a href="/" use:link use:active>{$t('nav.expenses')}</a>
         <a href="/stats" use:link use:active>{$t('nav.stats')}</a>
         <a href="/settleup" use:link use:active>{$t('nav.settleUp')}</a>
       {/if}
-      {#if $activeGroup?.capabilities.photoSaving}
+      {#if $myAccess.photoSaving !== 'none'}
         <a href="/documents" use:link use:active>{$t('nav.documents')}</a>
       {/if}
-      {#if $activeGroup?.capabilities.shoppingList}
+      {#if $myAccess.shoppingList !== 'none'}
         <a href="/shopping" use:link use:active>{$t('nav.shopping')}</a>
       {/if}
-      {#if $activeGroup?.capabilities.storage}
+      {#if $myAccess.storage !== 'none'}
         <a href="/storage" use:link use:active={'/storage*'}>{$t('nav.storage')}</a>
       {/if}
       {#if $activeGroup}

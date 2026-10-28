@@ -17,7 +17,7 @@ import {
   type WriteBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { activeGroupResolvedId } from './groups';
+import { groupIdFor } from './groups';
 import { currentUser } from './auth';
 import { normalizeText } from '../utils/normalize';
 import { locale } from '../i18n';
@@ -47,7 +47,7 @@ export const storageLoading = writable(true);
 // full-text search anyway).
 let unsubs: (() => void)[] = [];
 
-activeGroupResolvedId.subscribe((groupId) => {
+groupIdFor('storage').subscribe((groupId) => {
   unsubs.forEach((u) => u());
   unsubs = [];
   storageUnits.set([]);

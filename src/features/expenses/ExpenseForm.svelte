@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { expenseMemberUids } from '../../lib/utils/access';
   import { currentUser } from '../../lib/stores/auth';
   import { categories } from '../../lib/stores/categories';
   import { addExpense, knownNames, updateExpense } from '../../lib/stores/expenses';
@@ -119,6 +120,9 @@
       saving = false;
     }
   }
+
+  // Only people who take part in expenses can be picked as payer.
+  let payers = $derived(expenseMemberUids(group));
 </script>
 
 <form class="card stack" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
@@ -162,7 +166,7 @@
     <label style="flex:1">
       {$t('expenseForm.paidBy')}
       <select bind:value={paidBy}>
-        {#each Object.entries(group.members) as [uid, member] (uid)}
+        {#each Object.entries(group.members).filter(([uid]) => payers.includes(uid) || uid === paidBy) as [uid, member] (uid)}
           <option value={uid}>{member.displayName}</option>
         {/each}
       </select>

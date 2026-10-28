@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { addDoc, collection, deleteDoc, doc, onSnapshot, updateDoc } from 'firebase/firestore';
   import { db } from '../../lib/firebase';
-  import { activeGroup, activeGroupResolvedId } from '../../lib/stores/groups';
+  import { activeGroup, groupIdFor, myAccess } from '../../lib/stores/groups';
+  import { expenseMemberUids } from '../../lib/utils/access';
   import { currentUser } from '../../lib/stores/auth';
   import { expenses, loadFullExpenseHistory } from '../../lib/stores/expenses';
   import { filterExpenses } from '../../lib/utils/stats';
@@ -30,9 +31,16 @@
   );
   let subsetTotal = $derived(filtered.reduce((sum, e) => sum + e.price, 0));
 
+  // Settle-up is only between people who take part in expenses.
+  let payerEntries = $derived(
+    $activeGroup ? Object.entries($activeGroup.members).filter(([uid]) => expenseMemberUids($activeGroup!).includes(uid)) : [],
+  );
+  let canEdit = $derived($myAccess.expenses === 'edit');
+  const debtsGroupId = groupIdFor('expenses');
+
   let memberInputs = $derived(
     $activeGroup
-      ? Object.entries($activeGroup.members).map(([uid, member]) => ({
+      ? payerEntries.map(([uid, member]) => ({
           uid,
           displayName: member.displayName,
           expectedPct: member.expectedPct,
@@ -50,7 +58,7 @@
   let activeDebts = $derived(debts.filter((d) => !d.settled));
 
   $effect(() => {
-    const groupId = $activeGroupResolvedId;
+    const groupId = $debtsGroupId;
     if (!groupId) {
       debts = [];
       return;
@@ -140,6 +148,8 @@
 
   {#if !$activeGroup}
     <p class="muted">{$t('settleUp.pickGroup')}</p>
+  {:else if $myAccess.expenses === 'none'}
+    <p class="muted">{$t('access.noAccess')}</p>
   {:else}
     <div class="card stack">
       <MonthPicker onSelect={(f, toDate) => { from = f; to = toDate; }} />
@@ -194,25 +204,28 @@
               {memberName(debt.debtorUid)} → {memberName(debt.creditorUid)}: {currency.format(debt.amount)}
               {#if debt.description}<span class="muted"> — {debt.description}</span>{/if}
             </span>
-            <div class="row">
-              <button onclick={() => toggleSettled(debt)}>{$t('debts.markSettled')}</button>
-              <button class="danger" onclick={() => removeDebt(debt)}>{$t('common.remove')}</button>
-            </div>
+            {#if canEdit}
+              <div class="row">
+                <button onclick={() => toggleSettled(debt)}>{$t('debts.markSettled')}</button>
+                <button class="danger" onclick={() => removeDebt(debt)}>{$t('common.remove')}</button>
+              </div>
+            {/if}
           </div>
         {/each}
       {/if}
 
+      {#if canEdit}
       <form class="row" onsubmit={(e) => { e.preventDefault(); handleAddDebt(); }}>
         <select bind:value={newDebtor}>
           <option value="">{$t('debts.debtorPlaceholder')}</option>
-          {#each Object.entries($activeGroup.members) as [uid, member] (uid)}
+          {#each payerEntries as [uid, member] (uid)}
             <option value={uid}>{member.displayName}</option>
           {/each}
         </select>
         <span class="muted">{$t('debts.owes')}</span>
         <select bind:value={newCreditor}>
           <option value="">{$t('debts.creditorPlaceholder')}</option>
-          {#each Object.entries($activeGroup.members) as [uid, member] (uid)}
+          {#each payerEntries as [uid, member] (uid)}
             <option value={uid}>{member.displayName}</option>
           {/each}
         </select>
@@ -220,6 +233,7 @@
         <input placeholder={$t('debts.descriptionPlaceholder')} bind:value={newDescription} />
         <button class="primary" type="submit" disabled={addingDebt}>{$t('common.add')}</button>
       </form>
+      {/if}
       {#if debtError}<p class="muted" style="color: var(--danger)">{debtError}</p>{/if}
     </div>
   {/if}

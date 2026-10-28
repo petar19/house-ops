@@ -1,16 +1,18 @@
 <script lang="ts">
   import { addDoc, collection, deleteDoc, doc, onSnapshot, updateDoc } from 'firebase/firestore';
   import { db } from '../../lib/firebase';
-  import { activeGroup, activeGroupResolvedId } from '../../lib/stores/groups';
+  import { activeGroup, groupIdFor, myAccess } from '../../lib/stores/groups';
   import { currentUser } from '../../lib/stores/auth';
   import { toIso } from '../../lib/utils/date';
   import { t } from '../../lib/i18n';
   import type { ShoppingItem } from '../../lib/types';
 
   let items = $state<ShoppingItem[]>([]);
+  const shoppingGroupId = groupIdFor('shoppingList');
+  let canEdit = $derived($myAccess.shoppingList === 'edit');
 
   $effect(() => {
-    const groupId = $activeGroupResolvedId;
+    const groupId = $shoppingGroupId;
     if (!groupId) {
       items = [];
       return;
@@ -139,6 +141,8 @@
     <p class="muted">{$t('exportImport.pickGroup')}</p>
   {:else if !$activeGroup.capabilities.shoppingList}
     <p class="muted">{$t('shopping.capabilityOff')}</p>
+  {:else if $myAccess.shoppingList === 'none'}
+    <p class="muted">{$t('access.noAccess')}</p>
   {:else}
     <div class="card stack">
       <h3 style="margin:0">{$t('shopping.needed')}</h3>
@@ -153,20 +157,24 @@
                 <span class="muted">— {$t('shopping.every', { days: item.restockIntervalDays })}</span>
               {/if}
             </span>
-            <div class="row">
-              <button class="primary" onclick={() => markBought(item)}>{$t('shopping.bought')}</button>
-              <button class="danger" onclick={() => removeItem(item)}>{$t('common.remove')}</button>
-            </div>
+            {#if canEdit}
+              <div class="row">
+                <button class="primary" onclick={() => markBought(item)}>{$t('shopping.bought')}</button>
+                <button class="danger" onclick={() => removeItem(item)}>{$t('common.remove')}</button>
+              </div>
+            {/if}
           </div>
         {/each}
       {/if}
 
+      {#if canEdit}
       <form class="row" onsubmit={(e) => { e.preventDefault(); handleAdd(); }}>
         <input placeholder={$t('shopping.namePlaceholder')} bind:value={newName} />
         <input type="number" min="1" style="width:6em" placeholder={$t('shopping.intervalPlaceholder')} bind:value={newInterval} />
         <span class="muted">{$t('shopping.days')}</span>
         <button class="primary" type="submit" disabled={adding}>{$t('common.add')}</button>
       </form>
+      {/if}
       {#if error}<p class="muted" style="color: var(--danger)">{error}</p>{/if}
     </div>
 
@@ -180,10 +188,12 @@
               {item.name}
               <span class="muted"> — {$t('shopping.lastBought', { date: item.lastBoughtAt ?? '' })}</span>
             </span>
-            <div class="row">
-              <button onclick={() => addBackToList(item)}>{$t('shopping.needNow')}</button>
-              <button class="danger" onclick={() => removeItem(item)}>{$t('common.remove')}</button>
-            </div>
+            {#if canEdit}
+              <div class="row">
+                <button onclick={() => addBackToList(item)}>{$t('shopping.needNow')}</button>
+                <button class="danger" onclick={() => removeItem(item)}>{$t('common.remove')}</button>
+              </div>
+            {/if}
           </div>
         {/each}
       </div>

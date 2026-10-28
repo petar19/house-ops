@@ -1,14 +1,14 @@
 import { writable } from 'svelte/store';
 import { addDoc, collection, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { activeGroupResolvedId } from './groups';
+import { groupIdFor } from './groups';
 import type { NameAlias } from '../types';
 
 export const nameAliases = writable<NameAlias[]>([]);
 
 let unsub: (() => void) | null = null;
 
-activeGroupResolvedId.subscribe((groupId) => {
+groupIdFor('expenses').subscribe((groupId) => {
   if (unsub) {
     unsub();
     unsub = null;

@@ -1,8 +1,17 @@
+export type GroupFeature = 'expenses' | 'photoSaving' | 'shoppingList' | 'storage';
+
+// none: tab hidden and data unreadable; view: read-only; edit: full use.
+export type AccessLevel = 'none' | 'view' | 'edit';
+
 export interface GroupMember {
   role: 'admin' | 'member';
   expectedPct: number;
   displayName: string;
   email: string;
+  // Set by a group admin per feature; a missing entry means 'edit', so
+  // members from before this existed keep full access. Admins always have
+  // full access regardless. Enforced in firestore.rules, not just the UI.
+  access?: Partial<Record<GroupFeature, AccessLevel>>;
 }
 
 // groups/{groupId}/notificationPrefs/{uid} — kept out of the shared `members`
@@ -18,12 +27,7 @@ export interface NotificationPref {
 // (whatsappIntegrations, photoSavingConfig below), same pattern either way,
 // so permission rules stay simple and per-collection instead of needing
 // field-level rules on this one document.
-export interface GroupCapabilities {
-  expenses: boolean;
-  photoSaving: boolean;
-  shoppingList: boolean;
-  storage: boolean;
-}
+export type GroupCapabilities = Record<GroupFeature, boolean>;
 
 export interface Group {
   id: string;

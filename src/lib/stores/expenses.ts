@@ -14,7 +14,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { activeGroupResolvedId } from './groups';
+import { groupIdFor } from './groups';
 import { currentUser } from './auth';
 import { normalizeText } from '../utils/normalize';
 import { sortByRecency } from '../utils/stats';
@@ -46,13 +46,15 @@ let unsubExpenses: (() => void) | null = null;
 let unsubKnownNames: (() => void) | null = null;
 let lastGroupId: string | null = null;
 
+const expensesGroupId = groupIdFor('expenses');
+
 const expensesSubscriptionKey = derived(
-  [activeGroupResolvedId, expensesRangeStart],
+  [expensesGroupId, expensesRangeStart],
   ([groupId, rangeStart]) => `${groupId ?? ''}|${rangeStart ?? ''}`,
 );
 
 expensesSubscriptionKey.subscribe(() => {
-  const groupId = get(activeGroupResolvedId);
+  const groupId = get(expensesGroupId);
   const rangeStart = get(expensesRangeStart);
 
   // Switching groups starts over at the default (small) window rather than

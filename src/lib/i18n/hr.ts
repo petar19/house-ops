@@ -455,4 +455,13 @@ export const hr: Record<string, string> = {
   'storage.spaceReset': 'Samo ovaj pretinac',
   'storage.spanNoFit': 'Prevelike za to mjesto: {names}',
   'storage.field.space': 'prostor',
+  'access.title': 'Pristup',
+  'access.description': 'Što svaki član smije koristiti u ovoj grupi. Pregled znači da može gledati, ali ne i mijenjati; Ništa skriva karticu. Tko nema pristup Troškovima, nije u podjeli troškova ni u poravnanju. Administratori uvijek imaju puni pristup.',
+  'access.adminFull': 'Administrator — puni pristup',
+  'access.level.edit': 'Može uređivati',
+  'access.level.view': 'Samo pregled',
+  'access.level.none': 'Ništa',
+  'access.noAccess': 'Nemaš pristup ovome u ovoj grupi — pitaj administratora grupe.',
+  'access.viewOnly': 'Samo pregled',
+  'access.back': 'Natrag',
 };

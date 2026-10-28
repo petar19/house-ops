@@ -11,6 +11,30 @@ service cloud.firestore {
       return isAllowed() && get(/databases/$(database)/documents/allowedUsers/$(userEmail())).data.role == 'admin';
     }
 
+    // Per-feature access inside a group (Settings → Access): admins can always
+    // do everything; anyone else has members[uid].access[feature] — 'none',
+    // 'view' or 'edit' — where a missing entry means 'edit', so members from
+    // before access levels existed keep full use. `feature` is a capability
+    // key: expenses, photoSaving, shoppingList, storage.
+    function groupMember(groupId) {
+      return get(/databases/$(database)/documents/groups/$(groupId)).data.members[request.auth.uid];
+    }
+    function isInGroup(groupId) {
+      return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+    }
+    function canView(groupId, feature) {
+      return isInGroup(groupId) && (
+        groupMember(groupId).role == 'admin'
+        || groupMember(groupId).get('access', {}).get(feature, 'edit') != 'none'
+      );
+    }
+    function canEdit(groupId, feature) {
+      return isInGroup(groupId) && (
+        groupMember(groupId).role == 'admin'
+        || groupMember(groupId).get('access', {}).get(feature, 'edit') == 'edit'
+      );
+    }
+
     match /allowedUsers/{email} {
       allow read: if isAllowed();
       allow create, update, delete: if isSiteAdmin();
@@ -96,16 +120,13 @@ service cloud.firestore {
       allow update, delete: if isGroupAdmin();
 
       match /expenses/{expenseId} {
-        function group() { return get(/databases/$(database)/documents/groups/$(groupId)).data; }
-        function isGroupMember() { return isAllowed() && request.auth.uid in group().members; }
-
         // paidBy is usually a member uid, but migrated expenses may carry a raw
         // legacy sender name instead (e.g. someone who's since left the group) —
         // only require it be a non-empty string, not necessarily a current member.
         function validPaidBy() { return request.resource.data.paidBy is string && request.resource.data.paidBy.size() > 0; }
 
-        allow read: if isGroupMember();
-        allow create: if isGroupMember()
+        allow read: if canView(groupId, 'expenses');
+        allow create: if canEdit(groupId, 'expenses')
           && request.resource.data.createdBy == request.auth.uid
           && validPaidBy()
           // != 0 rather than > 0: migrated corrections can be negative (e.g. a
@@ -117,18 +138,19 @@ service cloud.firestore {
           // bypasses rules anyway); this is just a defense-in-depth backstop
           // against a client faking either source through the normal app.
           && (request.resource.data.source == 'manual' || isSiteAdmin());
-        allow update: if isGroupMember() && validPaidBy();
-        allow delete: if isGroupMember();
+        allow update: if canEdit(groupId, 'expenses') && validPaidBy();
+        allow delete: if canEdit(groupId, 'expenses');
       }
 
+      // Both part of expenses (name suggestions and merged spellings).
       match /knownNames/{nameId} {
-        function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
-        allow read, write: if isGroupMember();
+        allow read: if canView(groupId, 'expenses');
+        allow write: if canEdit(groupId, 'expenses');
       }
 
       match /nameAliases/{aliasId} {
-        function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
-        allow read, write: if isGroupMember();
+        allow read: if canView(groupId, 'expenses');
+        allow write: if canEdit(groupId, 'expenses');
       }
 
       match /migrationRuns/{runId} {
@@ -139,10 +161,10 @@ service cloud.firestore {
       // Kept separate from the `members` map specifically so this rule can
       // scope "only your own doc" without needing to diff one nested key
       // inside a field shared with role/expectedPct/etc.
+      // These are expense announcements, so they follow expenses access.
       match /notificationPrefs/{uid} {
-        function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
-        allow read: if isGroupMember();
-        allow write: if isGroupMember() && request.auth.uid == uid;
+        allow read: if canView(groupId, 'expenses');
+        allow write: if canView(groupId, 'expenses') && request.auth.uid == uid;
       }
 
       // Written only by the OCR watcher (Admin SDK, bypasses rules) — the
@@ -150,13 +172,11 @@ service cloud.firestore {
       // that stays local-only) and the per-vendor aggregate counts that let
       // it list "folders" without loading every document up front.
       match /documents/{id} {
-        function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
-        allow read: if isGroupMember();
+        allow read: if canView(groupId, 'photoSaving');
         allow write: if false;
       }
       match /documentVendors/{vendorSlug} {
-        function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
-        allow read: if isGroupMember();
+        allow read: if canView(groupId, 'photoSaving');
         allow write: if false;
       }
 
@@ -166,15 +186,14 @@ service cloud.firestore {
       // only ever resolves balances between members.
       match /debts/{debtId} {
         function group() { return get(/databases/$(database)/documents/groups/$(groupId)).data; }
-        function isGroupMember() { return isAllowed() && request.auth.uid in group().members; }
         function validParties(data) {
           return data.creditorUid in group().members
             && data.debtorUid in group().members
             && data.creditorUid != data.debtorUid;
         }
 
-        allow read: if isGroupMember();
-        allow create: if isGroupMember()
+        allow read: if canView(groupId, 'expenses');
+        allow create: if canEdit(groupId, 'expenses')
           && request.resource.data.createdBy == request.auth.uid
           && validParties(request.resource.data)
           && request.resource.data.amount is number && request.resource.data.amount > 0
@@ -182,8 +201,8 @@ service cloud.firestore {
           // (which bypasses rules anyway) — defense-in-depth against a client
           // faking that source through the normal app, same as expenses.
           && (request.resource.data.source == 'manual' || isSiteAdmin());
-        allow update: if isGroupMember() && validParties(resource.data);
-        allow delete: if isGroupMember();
+        allow update: if canEdit(groupId, 'expenses') && validParties(resource.data);
+        allow delete: if canEdit(groupId, 'expenses');
       }
 
       // The group's "Shopping list" capability — a flat list of items, each
@@ -192,8 +211,8 @@ service cloud.firestore {
       // links to a doc in the sibling /reminders subcollection below that
       // nudges the group chat when it's due again.
       match /shoppingItems/{itemId} {
-        function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
-        allow read, write: if isGroupMember();
+        allow read: if canView(groupId, 'shoppingList');
+        allow write: if canEdit(groupId, 'shoppingList');
       }
 
       // Group-scoped reminders — shared, any member can see/manage one, same
@@ -209,31 +228,29 @@ service cloud.firestore {
 
       // The group's "Storage" capability — units (shelving, freezer…), the
       // items in their cells, the group's own catalog of item names and
-      // categories. Shared household stuff: any member can manage all of it,
-      // same trust level as shoppingItems.
+      // categories. Anyone with edit access to storage can manage all of it.
       match /storageUnits/{unitId} {
-        function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
-        allow read, write: if isGroupMember();
+        allow read: if canView(groupId, 'storage');
+        allow write: if canEdit(groupId, 'storage');
       }
       match /storageItems/{itemId} {
-        function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
-        allow read, write: if isGroupMember();
+        allow read: if canView(groupId, 'storage');
+        allow write: if canEdit(groupId, 'storage');
       }
       match /storageCatalog/{nameKey} {
-        function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
-        allow read, write: if isGroupMember();
+        allow read: if canView(groupId, 'storage');
+        allow write: if canEdit(groupId, 'storage');
       }
       match /storageCategories/{categoryId} {
-        function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
-        allow read, write: if isGroupMember();
+        allow read: if canView(groupId, 'storage');
+        allow write: if canEdit(groupId, 'storage');
       }
-      // Append-only history of item adds/moves/edits/removals: a member can
+      // Append-only history of item adds/moves/edits/removals: an editor can
       // only add entries in their own name, and nobody can rewrite or delete
       // one afterwards.
       match /storageEvents/{eventId} {
-        function isGroupMember() { return isAllowed() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members; }
-        allow read: if isGroupMember();
-        allow create: if isGroupMember()
+        allow read: if canView(groupId, 'storage');
+        allow create: if canEdit(groupId, 'storage')
           && request.resource.data.by == request.auth.uid
           && request.resource.data.at is number;
         allow update, delete: if false;

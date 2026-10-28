@@ -455,4 +455,13 @@ export const en: Record<string, string> = {
   'storage.spaceReset': 'Just this cell',
   'storage.spanNoFit': 'Too big for that spot: {names}',
   'storage.field.space': 'space',
+  'access.title': 'Access',
+  'access.description': "What each member can use in this group. View lets them look without changing anything; None hides the tab. Someone without Expenses access isn't part of the expense split or settle-up. Admins always have full access.",
+  'access.adminFull': 'Admin — full access',
+  'access.level.edit': 'Can edit',
+  'access.level.view': 'View only',
+  'access.level.none': 'None',
+  'access.noAccess': "You don't have access to this in this group — ask a group admin.",
+  'access.viewOnly': 'View only',
+  'access.back': 'Back',
 };
