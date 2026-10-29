@@ -547,4 +547,5 @@ export const hr: Record<string, string> = {
   'inbox.putThere': 'Spremi na uobičajeno mjesto',
   'inbox.banner': 'za spremiti: {count}',
   'picker.search': 'Traži po nazivu ili mjestu (npr. garaža)…',
+  'import.searchBills': 'Traži po trgovini (npr. Lidl)…',
 };

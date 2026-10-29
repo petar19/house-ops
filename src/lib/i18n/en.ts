@@ -547,4 +547,5 @@ export const en: Record<string, string> = {
   'inbox.putThere': 'Put where it usually goes',
   'inbox.banner': '{count} to put away',
   'picker.search': 'Search by name or place (e.g. garage)…',
+  'import.searchBills': 'Search by shop (e.g. Lidl)…',
 };

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+  import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
   import { link, push } from 'svelte-spa-router';
   import { db } from '../../lib/firebase';
   import { t } from '../../lib/i18n';
@@ -12,7 +12,8 @@
     type ImportDraft,
   } from '../../lib/stores/storage';
   import { makePlaceOf } from '../../lib/storage/layout';
-  import type { DocumentRecord, ReceiptItemRequest } from '../../lib/types';
+  import { matchQuality } from '../../lib/storage/suggest';
+  import type { DocumentRecord, DocumentVendor, ReceiptItemRequest } from '../../lib/types';
   import ImportRows, { newRow, type ImportRow } from './ImportRows.svelte';
 
   // Collect a whole shopping trip into Unsorted in one go — typed/pasted, or
@@ -64,6 +65,54 @@
   let bills = $state<DocumentRecord[] | null>(null);
   let requests = $state(new Map<string, ReceiptItemRequest>());
   let selectedBill = $state<DocumentRecord | null>(null);
+
+  // Searching by shop name: the list above only holds the latest bills, so
+  // a search looks up matching vendors in the full vendor list and loads all
+  // of their bills (the same per-vendor query the Documents tab uses).
+  let billQuery = $state('');
+  let vendorNames = $state<string[] | null>(null);
+  let searchResults = $state<DocumentRecord[] | null>(null);
+  let searching = $state(false);
+
+  async function loadVendorNames(gid: string): Promise<string[]> {
+    if (vendorNames) return vendorNames;
+    const snap = await getDocs(collection(db, 'groups', gid, 'documentVendors'));
+    vendorNames = snap.docs.map((d) => (d.data() as DocumentVendor).displayName).filter(Boolean);
+    return vendorNames;
+  }
+
+  $effect(() => {
+    const q = billQuery.trim();
+    const gid = $billsGroupId;
+    if (!q || !gid) {
+      searchResults = null;
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      searching = true;
+      try {
+        const names = (await loadVendorNames(gid)).filter((n) => matchQuality(q, n) > 0).slice(0, 8);
+        const snaps = await Promise.all(
+          names.map((n) => getDocs(query(collection(db, 'groups', gid, 'documents'), where('vendor', '==', n)))),
+        );
+        if (cancelled) return;
+        searchResults = snaps
+          .flatMap((snap) => snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<DocumentRecord, 'id'>) })))
+          .sort((a, b) => (b.date ?? b.processedAt).localeCompare(a.date ?? a.processedAt));
+      } catch (e) {
+        if (!cancelled) error = e instanceof Error ? e.message : String(e);
+      } finally {
+        if (!cancelled) searching = false;
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  });
+
+  let shownBills = $derived(searchResults ?? bills);
   let waitingSince = $state<number | null>(null);
   let now = $state(Date.now());
 
@@ -110,6 +159,7 @@
       const fresh = { id: snap.id, ...(snap.data() as Omit<DocumentRecord, 'id'>) };
       selectedBill = fresh;
       bills = bills?.map((b) => (b.id === fresh.id ? fresh : b)) ?? null;
+      searchResults = searchResults?.map((b) => (b.id === fresh.id ? fresh : b)) ?? null;
       rows = rowsFromBill(fresh);
       waitingSince = null;
     });
@@ -158,7 +208,12 @@
           <p class="muted" style="margin:0">{$t('import.noBills')}</p>
         {:else}
           <p class="muted" style="margin:0">{$t('import.pickBill')}</p>
-          {#each bills as bill (bill.id)}
+          <input type="search" bind:value={billQuery} placeholder={$t('import.searchBills')} aria-label={$t('import.searchBills')} />
+          {#if searching}<p class="muted" style="margin:0">{$t('common.loading')}</p>{/if}
+          {#if searchResults && searchResults.length === 0 && !searching}
+            <p class="muted" style="margin:0">{$t('storage.noResults')}</p>
+          {/if}
+          {#each shownBills ?? [] as bill (bill.id)}
             {@const req = requests.get(bill.id)}
             <button class="bill" onclick={() => chooseBill(bill)}>
               <span class="row" style="justify-content: space-between; flex-wrap: nowrap">
