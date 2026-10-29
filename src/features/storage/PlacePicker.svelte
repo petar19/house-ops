@@ -1,9 +1,10 @@
 <script lang="ts">
   import { t } from '../../lib/i18n';
   import { storageItems, storageUnits } from '../../lib/stores/storage';
-  import { fullPlaceLabel, spanFits, unitIcon } from '../../lib/storage/layout';
+  import { fullPlaceLabel, spanFits } from '../../lib/storage/layout';
   import type { StoragePlacement, StorageSpan, StorageUnit } from '../../lib/types';
   import UnitGrid from './UnitGrid.svelte';
+  import UnitPicker from './UnitPicker.svelte';
 
   // Pick a cell in one of `targets` to put a container into. The container's
   // own span (if it takes up several cells) has to fit from the picked cell.
@@ -26,6 +27,10 @@
   let unitId = $state(targets[0]?.id ?? '');
   let cellId = $state<string | null>(null);
   let unit = $derived(targets.find((u) => u.id === unitId) ?? null);
+  $effect(() => {
+    void unitId;
+    cellId = null;
+  });
   let fits = $derived(!!unit && !!cellId && spanFits(unit, cellId, span ?? undefined));
 </script>
 
@@ -33,9 +38,7 @@
   {#if sorted.length === 0}
     <p class="muted" style="margin:0">{$t('storage.noPlaceTargets')}</p>
   {:else}
-    <select bind:value={unitId} onchange={() => (cellId = null)}>
-      {#each sorted as u (u.id)}<option value={u.id}>{unitIcon(u)} {u.name}</option>{/each}
-    </select>
+    <UnitPicker units={targets} bind:value={unitId} />
     {#if unit}
       <UnitGrid
         {unit}

@@ -44,6 +44,7 @@
   import QtyFields from './QtyFields.svelte';
   import UnitEditor from './UnitEditor.svelte';
   import UnitGrid from './UnitGrid.svelte';
+  import UnitPicker from './UnitPicker.svelte';
 
   // Everything about one cell: its items (quick +/−, level), multi-select
   // move/delete, adding with autocomplete, and per-item edit + history.
@@ -341,7 +342,11 @@
     });
   }
 
-  let unitsSorted = $derived([...$storageUnits].sort((a, b) => a.name.localeCompare(b.name)));
+  // A different unit picked: its cells are a different grid.
+  $effect(() => {
+    void moveUnitId;
+    moveCellId = null;
+  });
 </script>
 
 {#snippet historyList()}
@@ -577,9 +582,7 @@
 {:else if view === 'move'}
   <div class="stack">
     <p class="muted" style="margin:0">{$t('storage.moveHint', { count: selectedItems.length })}</p>
-    <select bind:value={moveUnitId} onchange={() => (moveCellId = null)}>
-      {#each unitsSorted as u (u.id)}<option value={u.id}>{u.name}</option>{/each}
-    </select>
+    <UnitPicker units={$storageUnits} bind:value={moveUnitId} />
     {#if moveUnit}
       <UnitGrid
         unit={moveUnit}
