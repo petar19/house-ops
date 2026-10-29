@@ -451,7 +451,7 @@ export const en: Record<string, string> = {
   'storage.spans': 'Takes up several cells',
   'storage.spansOver': 'takes up {place}',
   'storage.space': 'Space',
-  'storage.spaceHint': 'Tap another cell to stretch this item over everything in between — e.g. both depths, or two layers. Smaller items can still go in those cells too.',
+  'storage.spaceHint': 'Tap another cell to stretch this item over everything in between — e.g. both depths, or two layers (or Ctrl/⌘+click each part). Smaller items can still go in those cells too.',
   'storage.spaceReset': 'Just this cell',
   'storage.spanNoFit': 'Too big for that spot: {names}',
   'storage.field.space': 'space',
@@ -548,4 +548,7 @@ export const en: Record<string, string> = {
   'inbox.banner': '{count} to put away',
   'picker.search': 'Search by name or place (e.g. garage)…',
   'import.searchBills': 'Search by shop (e.g. Lidl)…',
+  'storage.placeHint': 'Tap where it goes. To make it take up more space, then tap the opposite corner — or Ctrl/⌘+click each part.',
+  'storage.placeHintStretch': 'Tap another cell to stretch it over everything in between — or just Put here.',
+  'storage.moveOrResize': 'Move / resize…',
 };

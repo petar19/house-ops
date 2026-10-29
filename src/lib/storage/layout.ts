@@ -109,6 +109,18 @@ export function spanBetween(a: string, b: string): { cellId: string; span: Stora
   };
 }
 
+/** The smallest box covering all the given cells (Ctrl+click to grow a selection). */
+export function spanAround(ids: string[]): { cellId: string; span: StorageSpan } {
+  const ps = ids.map(parseCellId).filter((p): p is NonNullable<typeof p> => !!p);
+  if (ps.length === 0) return { cellId: ids[0] ?? '', span: SINGLE };
+  const lo = { level: Math.min(...ps.map((p) => p.level)), row: Math.min(...ps.map((p) => p.row)), col: Math.min(...ps.map((p) => p.col)) };
+  const hi = { level: Math.max(...ps.map((p) => p.level)), row: Math.max(...ps.map((p) => p.row)), col: Math.max(...ps.map((p) => p.col)) };
+  return {
+    cellId: cellId(lo.level, lo.row, lo.col),
+    span: { levels: hi.level - lo.level + 1, rows: hi.row - lo.row + 1, cols: hi.col - lo.col + 1 },
+  };
+}
+
 export function coversCell(item: Pick<StorageItem, 'cellId' | 'span'>, id: string): boolean {
   return coveredCellIds(item.cellId, spanOf(item)).includes(id);
 }

@@ -451,7 +451,7 @@ export const hr: Record<string, string> = {
   'storage.spans': 'Zauzima više pretinaca',
   'storage.spansOver': 'zauzima {place}',
   'storage.space': 'Prostor',
-  'storage.spaceHint': 'Dodirni drugi pretinac da se stvar proteže preko svega između — npr. obje dubine ili dva sloja. Manje stvari i dalje mogu ići u te pretince.',
+  'storage.spaceHint': 'Dodirni drugi pretinac da se stvar proteže preko svega između — npr. obje dubine ili dva sloja (ili Ctrl/⌘+klik na svaki dio). Manje stvari i dalje mogu ići u te pretince.',
   'storage.spaceReset': 'Samo ovaj pretinac',
   'storage.spanNoFit': 'Prevelike za to mjesto: {names}',
   'storage.field.space': 'prostor',
@@ -548,4 +548,7 @@ export const hr: Record<string, string> = {
   'inbox.banner': 'za spremiti: {count}',
   'picker.search': 'Traži po nazivu ili mjestu (npr. garaža)…',
   'import.searchBills': 'Traži po trgovini (npr. Lidl)…',
+  'storage.placeHint': 'Dodirni gdje ide. Da zauzima više mjesta, zatim dodirni suprotni kut — ili Ctrl/⌘+klik na svaki dio.',
+  'storage.placeHintStretch': 'Dodirni drugi pretinac da se proteže preko svega između — ili samo Stavi ovdje.',
+  'storage.moveOrResize': 'Premjesti / promijeni veličinu…',
 };

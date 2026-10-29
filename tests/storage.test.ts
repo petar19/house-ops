@@ -21,6 +21,7 @@ import {
   ROOM_CELL,
   canMerge,
   usualPlace,
+  spanAround,
 } from '../src/lib/storage/layout';
 import { matchQuality, mergeCatalog, searchItems, suggest } from '../src/lib/storage/suggest';
 import { SYSTEM_ITEMS } from '../src/lib/storage/systemCatalog';
@@ -362,5 +363,13 @@ describe('putting imported things away', () => {
     expect(canMerge(a, item({ id: 'b', nameKey: 'peas', qtyMode: 'level', amount: null, level: 'some' }))).toBe(false);
     expect(canMerge(a, item({ id: 'b', nameKey: 'peas', amount: 1, unit: 'bag', span: { levels: 2, rows: 1, cols: 1 } }))).toBe(false);
     expect(canMerge(a, item({ id: 'b', nameKey: 'corn', amount: 1, unit: 'bag' }))).toBe(false);
+  });
+});
+
+describe('growing a selection with Ctrl+click', () => {
+  it('covers every clicked cell with the smallest box', () => {
+    expect(spanAround(['2.1.1'])).toEqual({ cellId: '2.1.1', span: { levels: 1, rows: 1, cols: 1 } });
+    expect(spanAround(['2.1.1', '2.2.1'])).toEqual({ cellId: '2.1.1', span: { levels: 1, rows: 2, cols: 1 } });
+    expect(spanAround(['3.1.2', '1.1.1', '2.1.3'])).toEqual({ cellId: '1.1.1', span: { levels: 3, rows: 1, cols: 3 } });
   });
 });

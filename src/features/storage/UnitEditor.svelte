@@ -284,11 +284,11 @@
     <div class="stack field">
       <span class="muted">{$t('storage.inside')}</span>
       {#if placing}
-        <PlacePicker {targets} span={unit.parent?.span ?? null} {busy} onConfirm={moveTo} onCancel={() => (placing = false)} />
+        <PlacePicker {targets} current={insideNonRoom ? unit.parent : null} {busy} onConfirm={moveTo} onCancel={() => (placing = false)} />
       {:else}
         <div class="row">
           <span>{insideNonRoom ? location : $t('storage.notInside')}</span>
-          <button type="button" onclick={() => (placing = true)} disabled={busy}>{insideNonRoom ? $t('storage.moveContainer') : $t('storage.putInto')}</button>
+          <button type="button" onclick={() => (placing = true)} disabled={busy}>{insideNonRoom ? $t('storage.moveOrResize') : $t('storage.putInto')}</button>
           {#if insideNonRoom}
             <button type="button" onclick={takeOut} disabled={busy}>{$t('storage.takeOut')}</button>
           {/if}

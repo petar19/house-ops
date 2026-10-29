@@ -23,7 +23,7 @@
     selected?: string | null;
     disabledCell?: string | null;
     compact?: boolean;
-    onPick?: (cellId: string) => void;
+    onPick?: (cellId: string, event: MouseEvent) => void;
   } = $props();
 
   let byCell = $derived.by(() => {
@@ -81,7 +81,7 @@
             class:selected={selected === id}
             class:empty={total === 0}
             disabled={disabledCell === id || !onPick}
-            onclick={() => onPick?.(id)}
+            onclick={(e) => onPick?.(id, e)}
           >
             <span class="cell-head">
               <span class="cell-label">{label}</span>

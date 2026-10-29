@@ -28,6 +28,7 @@
     isSpanning,
     makePlaceOf,
     placeLabel,
+    spanAround,
     spanBetween,
     spanFits,
     spanOf,
@@ -312,8 +313,15 @@
     });
   }
 
-  function pickCorner(id: string) {
-    ({ cellId: edCellId, span: edSpan } = spanBetween(edCorner, id));
+  // Tap: the box between the fixed corner and this cell. Ctrl/⌘+click: grow
+  // the current box to take in this cell too.
+  function pickCorner(id: string, e: MouseEvent) {
+    if (e.ctrlKey || e.metaKey) {
+      ({ cellId: edCellId, span: edSpan } = spanAround([...edCovered, id]));
+      edCorner = edCellId;
+    } else {
+      ({ cellId: edCellId, span: edSpan } = spanBetween(edCorner, id));
+    }
   }
 
   // ── Move ──
