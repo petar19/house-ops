@@ -19,6 +19,8 @@ import {
   unitIcon,
   roomOf,
   ROOM_CELL,
+  canMerge,
+  usualPlace,
 } from '../src/lib/storage/layout';
 import { matchQuality, mergeCatalog, searchItems, suggest } from '../src/lib/storage/suggest';
 import { SYSTEM_ITEMS } from '../src/lib/storage/systemCatalog';
@@ -330,5 +332,35 @@ describe('storage rooms', () => {
 
   it('gives a room the door icon by default', () => {
     expect(unitIcon(living)).toBe('🚪');
+  });
+});
+
+describe('putting imported things away', () => {
+  const freezer = unit({ id: 'freezer', name: 'Freezer' });
+  const inbox = unit({ id: 'inbox', name: 'Unsorted', kind: 'custom', levels: 1, rows: 1, cols: 1, inbox: true });
+  const units = [freezer, inbox];
+  const peas = item({ id: 'p', unitId: 'inbox', cellId: '1.1.1', name: 'Peas', nameKey: 'peas' });
+
+  it('suggests where a thing was last put away', () => {
+    const catalog = [{ id: 'peas', lastPlace: { unitId: 'freezer', cellId: '2.1.3' } }];
+    expect(usualPlace(catalog, units, peas)).toEqual({ unitId: 'freezer', cellId: '2.1.3' });
+  });
+
+  it("doesn't suggest a gone, inbox, too-small or same spot", () => {
+    expect(usualPlace([{ id: 'peas', lastPlace: { unitId: 'deleted', cellId: '1.1.1' } }], units, peas)).toBeNull();
+    expect(usualPlace([{ id: 'peas', lastPlace: { unitId: 'inbox', cellId: '1.1.1' } }], units, peas)).toBeNull();
+    expect(usualPlace([{ id: 'peas', lastPlace: { unitId: 'freezer', cellId: '9.1.1' } }], units, peas)).toBeNull();
+    expect(usualPlace([{ id: 'peas' }], units, peas)).toBeNull();
+    const tall = { ...peas, span: { levels: 2, rows: 1, cols: 1 } };
+    expect(usualPlace([{ id: 'peas', lastPlace: { unitId: 'freezer', cellId: '3.1.1' } }], units, tall)).toBeNull();
+  });
+
+  it('merges only the same stock counted the same way', () => {
+    const a = item({ id: 'a', nameKey: 'peas', amount: 2, unit: 'bag' });
+    expect(canMerge(a, item({ id: 'b', nameKey: 'peas', amount: 1, unit: 'bag' }))).toBe(true);
+    expect(canMerge(a, item({ id: 'b', nameKey: 'peas', amount: 1, unit: 'kg' }))).toBe(false);
+    expect(canMerge(a, item({ id: 'b', nameKey: 'peas', qtyMode: 'level', amount: null, level: 'some' }))).toBe(false);
+    expect(canMerge(a, item({ id: 'b', nameKey: 'peas', amount: 1, unit: 'bag', span: { levels: 2, rows: 1, cols: 1 } }))).toBe(false);
+    expect(canMerge(a, item({ id: 'b', nameKey: 'corn', amount: 1, unit: 'bag' }))).toBe(false);
   });
 });

@@ -17,6 +17,7 @@
   import { searchItems } from '../../lib/storage/suggest';
   import Modal from '../../lib/components/Modal.svelte';
   import CellPanel from './CellPanel.svelte';
+  import InboxView from './InboxView.svelte';
   import RoomView from './RoomView.svelte';
   import ShareLabel from './ShareLabel.svelte';
   import StorageHistory from './StorageHistory.svelte';
@@ -122,6 +123,8 @@
 
     {#if isRoom(unit)}
       <RoomView room={unit} {readonly} />
+    {:else if unit.inbox}
+      <InboxView {unit} {readonly} />
     {:else}
     <input type="search" bind:value={q} placeholder={$t('storage.filterPlaceholder')} />
     {#if q.trim()}
@@ -136,7 +139,7 @@
 </div>
 
 {#if unit}
-  <Modal open={!!openCellId && !isRoom(unit) && cellExists(unit, openCellId)} onClose={() => (openCellId = null)} title={cellTitle}>
+  <Modal open={!!openCellId && !isRoom(unit) && !unit.inbox && cellExists(unit, openCellId)} onClose={() => (openCellId = null)} title={cellTitle}>
     {#snippet children()}
       {#key openCellId}
         <CellPanel

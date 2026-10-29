@@ -145,6 +145,30 @@ export interface DocumentRecord {
   fullText: string;
   sourceFile: string;
   processedAt: string;
+  // The products on the bill, read on request for Storage → Import (see
+  // ReceiptItemRequest) — absent until someone imports from this bill.
+  lineItems?: ReceiptLineItem[];
+}
+
+export interface ReceiptLineItem {
+  raw: string; // as printed, e.g. "ZDR.JOG 1,5% 1L"
+  name: string; // cleaned up by Gemini, reusing the group's own item names
+  quantity: number | null;
+  unit: string | null;
+}
+
+// groups/{groupId}/receiptItemRequests/{documentId} — the app asks for a
+// bill's products ('pending'); the OCR watcher (bot repo, receiptItems.ts)
+// reads them off its stored text into the document's lineItems and marks
+// this 'done' or 'error'. importedAt is set once they've been added to
+// Unsorted, so the bill list can say so.
+export interface ReceiptItemRequest {
+  status: 'pending' | 'done' | 'error';
+  requestedBy: string;
+  requestedAt: number;
+  count?: number;
+  error?: string;
+  importedAt?: number | null;
 }
 
 // groups/{groupId}/documentVendors/{vendorSlug} — one doc per vendor
@@ -269,6 +293,9 @@ export interface StorageUnit {
   // Where a movable unit currently sits. Null/absent = loose (top-level),
   // which is also what every fixed unit (freezer, shelves) always is.
   parent?: StoragePlacement | null;
+  // The group's one "Unsorted" container, where imported items land until
+  // they're put away (created on first import).
+  inbox?: boolean;
   createdAt: number;
   createdBy: string;
 }
@@ -323,6 +350,8 @@ export interface StorageCatalogEntry {
   count: number;
   lastUsed: number;
   unitIds: string[]; // storage units it has been put in — ranks it higher there
+  // Where it was last put away (never Unsorted) — the "usually goes" hint.
+  lastPlace?: StoragePlacement | null;
 }
 
 // groups/{groupId}/storageCategories/{id} — a group's own categories on top

@@ -300,3 +300,35 @@ export function roomOf(units: StorageUnit[], unitId: string): StorageUnit | null
   }
   return null;
 }
+
+/**
+ * Where an item usually goes: the catalog's record of where this thing was
+ * last put away, as long as that spot still exists and the item fits there.
+ */
+export function usualPlace(
+  catalog: { id: string; lastPlace?: { unitId: string; cellId: string } | null }[],
+  units: StorageUnit[],
+  item: Pick<StorageItem, 'nameKey' | 'unitId' | 'cellId' | 'span'>,
+): { unitId: string; cellId: string } | null {
+  const place = catalog.find((e) => e.id === item.nameKey)?.lastPlace;
+  if (!place) return null;
+  const unit = units.find((u) => u.id === place.unitId);
+  if (!unit || unit.inbox || !spanFits(unit, place.cellId, spanOf(item))) return null;
+  if (place.unitId === item.unitId && place.cellId === item.cellId) return null; // already there
+  return { unitId: place.unitId, cellId: place.cellId };
+}
+
+/**
+ * Two entries that are really the same stock: same thing, both counted in
+ * the same unit of measure, neither stretched over several cells. Moving
+ * one onto the other adds the amounts instead of keeping two lines.
+ */
+export function canMerge(a: StorageItem, b: StorageItem): boolean {
+  return (
+    a.nameKey === b.nameKey &&
+    a.qtyMode === 'count' && b.qtyMode === 'count' &&
+    a.amount !== null && b.amount !== null &&
+    (a.unit ?? '') === (b.unit ?? '') &&
+    !isSpanning(a) && !isSpanning(b)
+  );
+}

@@ -245,6 +245,19 @@ service cloud.firestore {
         allow read: if canView(groupId, 'storage');
         allow write: if canEdit(groupId, 'storage');
       }
+      // Storage → Import → From a bill asks for a bill's products to be read
+      // off it; the OCR watcher (Admin SDK) does the reading and sets status
+      // to 'done'/'error'. Clients can only ask (status 'pending') or leave
+      // the status as it is (to note when the items were imported).
+      match /receiptItemRequests/{documentId} {
+        allow read: if canView(groupId, 'photoSaving');
+        allow create, update: if canView(groupId, 'photoSaving') && canEdit(groupId, 'storage')
+          && request.resource.data.requestedBy == request.auth.uid
+          && (request.resource.data.status == 'pending'
+              || (resource != null && request.resource.data.status == resource.data.status));
+        allow delete: if false;
+      }
+
       // Append-only history of item adds/moves/edits/removals: an editor can
       // only add entries in their own name, and nobody can rewrite or delete
       // one afterwards.

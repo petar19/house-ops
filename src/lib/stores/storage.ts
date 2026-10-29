@@ -10,6 +10,7 @@ import {
   limit,
   onSnapshot,
   orderBy,
+  setDoc,
   query,
   updateDoc,
   where,
@@ -23,8 +24,10 @@ import { normalizeText } from '../utils/normalize';
 import { locale } from '../i18n';
 import { SYSTEM_ITEMS } from '../storage/systemCatalog';
 import { mergeCatalog } from '../storage/suggest';
-import { isSpanning, type PlaceOf } from '../storage/layout';
+import { canMerge, isSpanning, type PlaceOf } from '../storage/layout';
+import { combineDrafts, type ImportDraft } from '../storage/importParse';
 import type {
+  ReceiptItemRequest,
   StorageCatalogEntry,
   StorageCategory,
   StorageEvent,
@@ -207,6 +210,12 @@ export interface ItemDraft {
 // Records the name in the group catalog (so it autocompletes next time).
 // A brand-new name starts with the categories the caller picked — usually
 // the matching system item's, else the unit's — an existing one keeps its.
+function isInbox(unitId: string): boolean {
+  return !!get(storageUnits).find((u) => u.id === unitId)?.inbox;
+}
+
+// Also remembers where the item was put (its lastPlace, the "usually goes"
+// hint) — except Unsorted, which is somewhere things wait, not where they go.
 function touchCatalog(
   batch: WriteBatch,
   groupId: string,
@@ -214,17 +223,21 @@ function touchCatalog(
   unitId: string,
   unitOfMeasure: string | null,
   categoriesIfNew: string[],
+  cellId?: string,
 ): void {
   const key = normalizeText(name);
   if (!key) return;
   const ref = doc(col(groupId, 'storageCatalog'), key);
   const existing = get(storageCatalog).find((e) => e.id === key);
+  const placed = !isInbox(unitId);
+  const lastPlace = placed && cellId ? { lastPlace: { unitId, cellId, span: null } } : {};
   if (existing) {
     batch.update(ref, {
       name,
       count: increment(1),
       lastUsed: Date.now(),
-      unitIds: arrayUnion(unitId),
+      ...(placed ? { unitIds: arrayUnion(unitId) } : {}),
+      ...lastPlace,
       ...(unitOfMeasure ? { unit: unitOfMeasure } : {}),
     });
   } else {
@@ -234,7 +247,8 @@ function touchCatalog(
       unit: unitOfMeasure,
       count: 1,
       lastUsed: Date.now(),
-      unitIds: [unitId],
+      unitIds: placed ? [unitId] : [],
+      ...lastPlace,
     });
   }
 }
@@ -292,7 +306,7 @@ export async function addItem(
     logEvent(batch, groupId, { action: 'add', itemId: ref.id, itemName: name, unitId, cellId, place: placeOf(unitId, cellId) });
   }
 
-  touchCatalog(batch, groupId, name, unitId, draft.qtyMode === 'count' ? draft.unit : null, categoriesIfNew);
+  touchCatalog(batch, groupId, name, unitId, draft.qtyMode === 'count' ? draft.unit : null, categoriesIfNew, cellId);
   await batch.commit();
 }
 
@@ -358,15 +372,17 @@ export async function moveItems(
 ): Promise<void> {
   const moving = items.filter((i) => i.unitId !== toUnitId || i.cellId !== toCellId);
   const me = uid();
-  // 3 writes per item: the item, its event, its catalog entry's unitIds.
-  await inChunks(moving, 150, (batch, chunk) => {
+  const intoInbox = isInbox(toUnitId);
+  // What's already in the target cell, plus each moved item once it lands —
+  // so two "peas" lines moved together also end up as one.
+  const atTarget: StorageItem[] = get(storageItems).filter((i) => i.unitId === toUnitId && i.cellId === toCellId);
+  const runningAmount = new Map<string, number>();
+
+  // Up to 6 writes per item: the item, the entry it merges into, two
+  // events and its catalog entry.
+  await inChunks(moving, 80, (batch, chunk) => {
     for (const item of chunk) {
-      batch.update(doc(col(groupId, 'storageItems'), item.id), {
-        unitId: toUnitId,
-        cellId: toCellId,
-        updatedAt: Date.now(),
-        updatedBy: me,
-      });
+      const now = Date.now();
       logEvent(batch, groupId, {
         action: 'move',
         itemId: item.id,
@@ -378,9 +394,35 @@ export async function moveItems(
         toCellId,
         toPlace: placeOf(toUnitId, toCellId, item.span),
       });
-      if (get(storageCatalog).some((e) => e.id === item.nameKey)) {
+      const target = atTarget.find((t) => t.id !== item.id && canMerge(t, item));
+      if (target) {
+        const before = runningAmount.get(target.id) ?? target.amount ?? 0;
+        const after = before + (item.amount ?? 0);
+        runningAmount.set(target.id, after);
+        batch.delete(doc(col(groupId, 'storageItems'), item.id));
+        batch.update(doc(col(groupId, 'storageItems'), target.id), { amount: after, updatedAt: now, updatedBy: me });
+        logEvent(batch, groupId, {
+          action: 'edit',
+          itemId: target.id,
+          itemName: target.name,
+          unitId: toUnitId,
+          cellId: toCellId,
+          place: placeOf(toUnitId, toCellId),
+          changes: { amount: { from: before, to: after } },
+        });
+      } else {
+        batch.update(doc(col(groupId, 'storageItems'), item.id), {
+          unitId: toUnitId,
+          cellId: toCellId,
+          updatedAt: now,
+          updatedBy: me,
+        });
+        atTarget.push({ ...item, unitId: toUnitId, cellId: toCellId });
+      }
+      if (!intoInbox && get(storageCatalog).some((e) => e.id === item.nameKey)) {
         batch.update(doc(col(groupId, 'storageCatalog'), item.nameKey), {
           unitIds: arrayUnion(toUnitId),
+          lastPlace: { unitId: toUnitId, cellId: toCellId, span: null },
         });
       }
     }
@@ -471,4 +513,63 @@ export async function convertItemToContainer(groupId: string, item: StorageItem,
   );
   await removeItems(groupId, [item], placeOf);
   return id;
+}
+
+export type { ImportDraft };
+
+// ── Import / Unsorted ──────────────────────────────────────────────────────
+
+/** The group's Unsorted container, created the first time something is imported. */
+export async function ensureUnsorted(groupId: string, name: string): Promise<string> {
+  const existing = get(storageUnits).find((u) => u.inbox);
+  if (existing) return existing.id;
+  const ref = await addDoc(col(groupId, 'storageUnits'), {
+    name,
+    kind: 'custom',
+    levels: 1,
+    rows: 1,
+    cols: 1,
+    categories: [],
+    levelNames: {},
+    cellNames: {},
+    icon: '📥',
+    movable: true,
+    parent: null,
+    inbox: true,
+    createdAt: Date.now(),
+    createdBy: uid(),
+  } satisfies Omit<StorageUnit, 'id'>);
+  return ref.id;
+}
+
+/** Adds a whole list to Unsorted (each one logged like a normal add). */
+export async function importToUnsorted(
+  groupId: string,
+  unsortedName: string,
+  drafts: ImportDraft[],
+  placeOf: PlaceOf,
+): Promise<{ unitId: string; count: number }> {
+  const unitId = await ensureUnsorted(groupId, unsortedName);
+  const list = combineDrafts(drafts);
+  for (const { categories, ...draft } of list) {
+    await addItem(groupId, unitId, '1.1.1', draft, categories, placeOf);
+  }
+  return { unitId, count: list.length };
+}
+
+/** Asks the OCR watcher to read a bill's products (see ReceiptItemRequest). */
+export async function requestReceiptItems(groupId: string, documentId: string): Promise<void> {
+  await setDoc(
+    doc(col(groupId, 'receiptItemRequests'), documentId),
+    { status: 'pending', requestedBy: uid(), requestedAt: Date.now() },
+    { merge: true },
+  );
+}
+
+export async function markReceiptImported(groupId: string, documentId: string, status: ReceiptItemRequest['status']): Promise<void> {
+  await setDoc(
+    doc(col(groupId, 'receiptItemRequests'), documentId),
+    { status, requestedBy: uid(), importedAt: Date.now() },
+    { merge: true },
+  );
 }

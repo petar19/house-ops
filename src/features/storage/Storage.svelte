@@ -18,7 +18,10 @@
   // Grouped by room: each room's own units as cards, then whatever isn't in a
   // room yet. Units sitting inside other units show up there, not here.
   let rooms = $derived($storageUnits.filter((u) => isRoom(u)).sort(byName));
-  let noRoom = $derived($storageUnits.filter((u) => !u.parent && !isRoom(u)).sort(byName));
+  // Unsorted gets its own banner (below) rather than a card among the rest.
+  let noRoom = $derived($storageUnits.filter((u) => !u.parent && !isRoom(u) && !u.inbox).sort(byName));
+  let unsorted = $derived($storageUnits.find((u) => u.inbox) ?? null);
+  let unsortedCount = $derived(unsorted ? $storageItems.filter((i) => i.unitId === unsorted!.id).length : 0);
   let roomFilter = $state<string>('all'); // 'all' | 'none' | a room id
   let shownRooms = $derived(roomFilter === 'all' ? rooms : rooms.filter((r) => r.id === roomFilter));
   let showNoRoom = $derived((roomFilter === 'all' || roomFilter === 'none') && noRoom.length > 0);
@@ -51,6 +54,7 @@
       <div class="row">
         <a href="/storage/history" use:link class="button-link">🕘 {$t('storage.historyTitle')}</a>
         {#if $myAccess.storage === 'edit'}
+          <a href="/storage/import" use:link class="button-link">📥 {$t('import.title')}</a>
           <button onclick={() => (creating = 'room')}>+ {$t('storage.newRoom')}</button>
           <button class="primary" onclick={() => (creating = 'shelving')}>+ {$t('storage.newUnit')}</button>
         {/if}
@@ -66,6 +70,13 @@
     <p class="muted">{$t('access.noAccess')}</p>
   {:else}
     <input type="search" bind:value={q} placeholder={$t('storage.searchPlaceholder')} />
+
+    {#if unsorted && unsortedCount > 0 && !q.trim()}
+      <a href="/storage/{unsorted.id}" use:link class="card unsorted">
+        <span>📥 <strong>{unsorted.name}</strong></span>
+        <span>{$t('inbox.banner', { count: unsortedCount })} ›</span>
+      </a>
+    {/if}
 
     {#if q.trim()}
       <div class="card stack">
@@ -164,6 +175,15 @@
     text-decoration: none;
     color: var(--text);
     background: var(--surface);
+  }
+  .unsorted {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    text-decoration: none;
+    color: var(--text);
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, var(--surface));
   }
   .room-title {
     font-weight: 700;

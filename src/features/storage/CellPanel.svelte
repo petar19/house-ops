@@ -10,6 +10,7 @@
     moveItems,
     placeUnit,
     removeItems,
+    storageCatalog,
     storageItems,
     storageUnits,
     updateItem,
@@ -33,6 +34,7 @@
     selfAndDescendants,
     unitIcon,
     unitLocationLabel,
+    usualPlace,
   } from '../../lib/storage/layout';
   import { describeEvent } from '../../lib/storage/history';
   import { normalizeText } from '../../lib/utils/normalize';
@@ -54,6 +56,7 @@
     readonly = false,
     onShare,
     looseOnly = false,
+    showUsual = false,
   }: {
     unit: StorageUnit;
     cellId: string;
@@ -63,6 +66,8 @@
     // A room's page shows its storage as cards itself and embeds this panel
     // just for the loose things (vacuum on the floor) — no container list.
     looseOnly?: boolean;
+    // Unsorted: show where each thing usually goes, with a one-tap move.
+    showUsual?: boolean;
   } = $props();
 
   let groupId = $derived($activeGroup?.id ?? '');
@@ -80,6 +85,14 @@
   }
 
   let view = $state<'list' | 'edit' | 'move' | 'newContainer'>('list');
+
+  function usualOf(item: StorageItem) {
+    return showUsual ? usualPlace($storageCatalog, $storageUnits, item) : null;
+  }
+  function putUsual(item: StorageItem) {
+    const place = usualOf(item);
+    if (place) run(() => moveItems(groupId, [item], place.unitId, place.cellId, placeOf));
+  }
 
   // ── Containers in this cell ──
   let containers = $derived(
@@ -412,6 +425,10 @@
               {#if isSpanning(item)}<span class="muted span-text">{$t('storage.spansOver', { place: spanText(item) })}</span>{/if}
               {#if item.expiry}<span class="muted">· {$t('storage.expires', { date: item.expiry })}</span>{/if}
               {#if item.note}<span class="muted note">{item.note}</span>{/if}
+              {#if usualOf(item)}
+                {@const u = usualOf(item)!}
+                <span class="muted note">📍 {$t('inbox.usually', { place: fullPlaceLabel($storageUnits, u.unitId, u.cellId, $t) })}</span>
+              {/if}
             </button>
             {#if readonly}
               <span class="qty">{formatQty(item, $t)}</span>
@@ -430,6 +447,9 @@
               >
                 {#each ['plenty', 'some', 'low', 'empty'] as l (l)}<option value={l}>{$t(`storage.qty.${l}`)}</option>{/each}
               </select>
+            {/if}
+            {#if !readonly && usualOf(item)}
+              <button class="details" onclick={() => putUsual(item)} disabled={busy} title={$t('inbox.putThere')} aria-label={$t('inbox.putThere')}>📍</button>
             {/if}
             <button
               class="details"
