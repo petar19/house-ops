@@ -6,13 +6,23 @@ export interface ParsedLine {
   name: string;
   amount: number | null;
   unit: string | null;
+  level: StorageLevel | null; // a rough amount instead ("flour, some")
 }
 
 const UNIT_ALIASES: Record<string, string> = {
   kom: 'pcs', komad: 'pcs', komada: 'pcs', pc: 'pcs', piece: 'pcs', pieces: 'pcs', x: 'pcs',
   kg: 'kg', g: 'g', gr: 'g', l: 'l', lit: 'l', ml: 'ml', m: 'm',
+  packs: 'pack', bags: 'bag', boxes: 'box', bottles: 'bottle', cans: 'can', jars: 'jar', rolls: 'roll',
   pak: 'pack', paket: 'pack', vrecica: 'bag', vreća: 'bag', vrecice: 'bag', kutija: 'box', boca: 'bottle',
   limenka: 'can', staklenka: 'jar', rola: 'roll',
+};
+
+// The rough amounts, in both app languages.
+const LEVEL_WORDS: Record<string, StorageLevel> = {
+  plenty: 'plenty', lots: 'plenty', puno: 'plenty',
+  some: 'some', nesto: 'some',
+  low: 'low', little: 'low', malo: 'low',
+  empty: 'empty', none: 'empty', nema: 'empty', prazno: 'empty',
 };
 
 function unitOf(word: string | undefined): string | null {
@@ -22,52 +32,83 @@ function unitOf(word: string | undefined): string | null {
   return UNIT_ALIASES[w] ?? null;
 }
 
-function lastSeparator(text: string): { at: number; length: number } | null {
-  for (let i = text.length - 1; i >= 0; i--) {
+function levelOf(word: string): StorageLevel | null {
+  return LEVEL_WORDS[normalizeText(word)] ?? null;
+}
+
+/**
+ * Splits "a, b; c - d" into fields. A comma between two digits ("1,5") is a
+ * decimal, and a dash only separates with spaces around it ("rice - 1 kg",
+ * not "low-fat").
+ */
+function fields(text: string): string[] {
+  const out: string[] = [];
+  let current = '';
+  for (let i = 0; i < text.length; i++) {
     const c = text[i];
-    if (c === ';' || c === '\t') return { at: i, length: 1 };
-    if (c === ',' && !(/\d/.test(text[i - 1] ?? '') && /\d/.test(text[i + 1] ?? ''))) return { at: i, length: 1 };
-    if (c === '-' && text[i - 1] === ' ' && text[i + 1] === ' ') return { at: i - 1, length: 3 };
+    const decimalComma = c === ',' && /\d/.test(text[i - 1] ?? '') && /\d/.test(text[i + 1] ?? '');
+    const spacedDash = c === '-' && text[i - 1] === ' ' && text[i + 1] === ' ';
+    if (c === ';' || c === '\t' || (c === ',' && !decimalComma) || spacedDash) {
+      out.push(current);
+      current = '';
+    } else {
+      current += c;
+    }
   }
-  return null;
+  out.push(current);
+  return out.map((f) => f.trim()).filter(Boolean);
 }
 
 const NUMBER = /^\d+(?:[.,]\d+)?$/;
 const num = (s: string) => Number(s.replace(',', '.'));
+const plain = (name: string, amount: number | null = null, unit: string | null = null): ParsedLine => ({
+  name,
+  amount,
+  unit,
+  level: null,
+});
 
 /**
- * One typed/pasted line → name + amount + unit. Accepts what people
- * naturally write: "peas, 2 bag", "Milk 1 l", "2x yogurt", "eggs;10",
- * "rice - 1 kg", or just "batteries".
+ * One typed/pasted line → name + amount + unit, or name + rough level.
+ * Accepts what people naturally write: "peas, 2, bag", "peas, 2 bag",
+ * "flour, some", "Milk 1 l", "2x yogurt", "eggs;10", "rice - 1,5 kg", or
+ * just "batteries".
  */
 export function parseImportLine(line: string): ParsedLine | null {
-  let text = line.trim().replace(/^[-*•]\s*/, '');
+  const text = line.trim().replace(/^[-*•]\s*/, '');
   if (!text) return null;
 
   // "2x yogurt" / "2 x yogurt"
   const lead = /^(\d+(?:[.,]\d+)?)\s*x\s+(.+)$/i.exec(text);
-  if (lead) return { name: lead[2].trim(), amount: num(lead[1]), unit: 'pcs' };
+  if (lead) return plain(lead[2].trim(), num(lead[1]), 'pcs');
 
-  // "name, 2 kg" / "name; 2" / "name - 2 kg" / "name\t2" — split at the
-  // last separator, where a comma between digits ("1,5") is a decimal, not one.
-  const sep = lastSeparator(text);
-  if (sep) {
-    const name = text.slice(0, sep.at).trim();
-    const rest = text.slice(sep.at + sep.length).trim();
-    const [qtyPart, unitPart] = rest.split(/\s+/);
-    if (name && qtyPart && NUMBER.test(qtyPart)) return { name, amount: num(qtyPart), unit: unitOf(unitPart) };
-    if (name && !rest) text = name;
+  const parts = fields(text);
+  if (parts.length >= 2) {
+    const last = parts[parts.length - 1];
+    // ITEM, SOME / PLENTY / LOW / EMPTY
+    const level = levelOf(last);
+    if (level) return { name: parts.slice(0, -1).join(', '), amount: null, unit: null, level };
+    // ITEM, HOW_MUCH, UNIT — the unit column can be any word
+    const beforeLast = parts[parts.length - 2];
+    if (parts.length >= 3 && NUMBER.test(beforeLast) && !NUMBER.test(last)) {
+      return plain(parts.slice(0, -2).join(', '), num(beforeLast), unitOf(last) ?? last.toLowerCase());
+    }
+    // ITEM, HOW_MUCH [UNIT]
+    const [qtyPart, ...unitWords] = last.split(/\s+/);
+    if (NUMBER.test(qtyPart) && unitWords.length <= 1) {
+      return plain(parts.slice(0, -1).join(', '), num(qtyPart), unitWords[0] ? (unitOf(unitWords[0]) ?? unitWords[0].toLowerCase()) : null);
+    }
   }
 
-  // "Milk 1 l" / "eggs 10" — trailing number (+ unit) without a separator
+  // No separator: "Milk 1 l" / "eggs 10" — a trailing number (+ known unit)
   const words = text.split(/\s+/);
   if (words.length >= 3 && NUMBER.test(words[words.length - 2]) && unitOf(words[words.length - 1])) {
-    return { name: words.slice(0, -2).join(' '), amount: num(words[words.length - 2]), unit: unitOf(words[words.length - 1]) };
+    return plain(words.slice(0, -2).join(' '), num(words[words.length - 2]), unitOf(words[words.length - 1]));
   }
   if (words.length >= 2 && NUMBER.test(words[words.length - 1])) {
-    return { name: words.slice(0, -1).join(' '), amount: num(words[words.length - 1]), unit: null };
+    return plain(words.slice(0, -1).join(' '), num(words[words.length - 1]));
   }
-  return { name: text, amount: null, unit: null };
+  return plain(text);
 }
 
 export function parseImportText(text: string): ParsedLine[] {

@@ -517,7 +517,7 @@ export const en: Record<string, string> = {
   'import.intro': 'Add a whole shopping trip at once. Everything goes into Unsorted, and you put things away from there whenever suits you.',
   'import.typeList': 'Type a list',
   'import.fromBill': 'From a bill',
-  'import.listHint': 'One item per row — Enter moves on, and pasting several lines (e.g. "peas, 2 bag") fills in several rows.',
+  'import.listHint': 'One item per row — Enter moves on. Pasting several lines fills in several rows, written as "item, amount, unit" (peas, 2, bag) or "item, some/plenty/low/empty" (flour, some).',
   'import.namePlaceholder': 'Item',
   'import.addRow': 'Row',
   'import.include': 'Include',

@@ -517,7 +517,7 @@ export const hr: Record<string, string> = {
   'import.intro': 'Dodaj cijelu kupovinu odjednom. Sve ide u Nerazvrstano, a odande stvari spremaš kad ti odgovara.',
   'import.typeList': 'Upiši popis',
   'import.fromBill': 'S računa',
-  'import.listHint': 'Jedna stvar po retku — Enter ide dalje, a lijepljenje više redaka (npr. "grašak, 2 vrećica") popunjava više redaka.',
+  'import.listHint': 'Jedna stvar po retku — Enter ide dalje. Lijepljenje više redaka popunjava više redaka, u obliku "stvar, količina, jedinica" (grašak, 2, vrećica) ili "stvar, nešto/puno/malo/nema" (brašno, nešto).',
   'import.namePlaceholder': 'Stvar',
   'import.addRow': 'Redak',
   'import.include': 'Uključi',

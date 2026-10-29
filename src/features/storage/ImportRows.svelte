@@ -59,7 +59,9 @@
     if (!/\n/.test(text.trim())) return; // one line: paste normally
     e.preventDefault();
     const parsed = parseImportText(text).map((p) =>
-      newRow({ name: p.name, amount: p.amount ?? 1, unit: p.unit ?? '' }),
+      p.level
+        ? newRow({ name: p.name, qtyMode: 'level', level: p.level })
+        : newRow({ name: p.name, amount: p.amount ?? 1, unit: p.unit ?? '' }),
     );
     // Replace this row if it was still empty, otherwise insert after it.
     const keep = rows[index].name.trim() ? 1 : 0;

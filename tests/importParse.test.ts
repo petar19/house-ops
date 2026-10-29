@@ -1,21 +1,44 @@
 import { describe, expect, it } from 'vitest';
 import { combineDrafts, parseImportLine, parseImportText, type ImportDraft } from '../src/lib/storage/importParse';
 
+const c = (name: string, amount: number | null, unit: string | null) => ({ name, amount, unit, level: null });
+
 describe('import line parsing', () => {
   it('reads the usual ways of writing a line', () => {
-    expect(parseImportLine('peas, 2 bag')).toEqual({ name: 'peas', amount: 2, unit: 'bag' });
-    expect(parseImportLine('Milk 1 l')).toEqual({ name: 'Milk', amount: 1, unit: 'l' });
-    expect(parseImportLine('2x yogurt')).toEqual({ name: 'yogurt', amount: 2, unit: 'pcs' });
-    expect(parseImportLine('eggs;10')).toEqual({ name: 'eggs', amount: 10, unit: null });
-    expect(parseImportLine('rice - 1,5 kg')).toEqual({ name: 'rice', amount: 1.5, unit: 'kg' });
-    expect(parseImportLine('Jogurt, 3 kom')).toEqual({ name: 'Jogurt', amount: 3, unit: 'pcs' });
-    expect(parseImportLine('- batteries')).toEqual({ name: 'batteries', amount: null, unit: null });
+    expect(parseImportLine('peas, 2 bag')).toEqual(c('peas', 2, 'bag'));
+    expect(parseImportLine('Milk 1 l')).toEqual(c('Milk', 1, 'l'));
+    expect(parseImportLine('2x yogurt')).toEqual(c('yogurt', 2, 'pcs'));
+    expect(parseImportLine('eggs;10')).toEqual(c('eggs', 10, null));
+    expect(parseImportLine('rice - 1,5 kg')).toEqual(c('rice', 1.5, 'kg'));
+    expect(parseImportLine('Jogurt, 3 kom')).toEqual(c('Jogurt', 3, 'pcs'));
+    expect(parseImportLine('- batteries')).toEqual(c('batteries', null, null));
   });
 
   it('keeps numbers that are part of the name', () => {
-    expect(parseImportLine('Batteries AA')).toEqual({ name: 'Batteries AA', amount: null, unit: null });
-    expect(parseImportLine('M6 screws, 20')).toEqual({ name: 'M6 screws', amount: 20, unit: null });
-    expect(parseImportLine('Coca Cola 0,5 l, 6 bottle')).toEqual({ name: 'Coca Cola 0,5 l', amount: 6, unit: 'bottle' });
+    expect(parseImportLine('Batteries AA')).toEqual(c('Batteries AA', null, null));
+    expect(parseImportLine('M6 screws, 20')).toEqual(c('M6 screws', 20, null));
+    expect(parseImportLine('Coca Cola 0,5 l, 6 bottle')).toEqual(c('Coca Cola 0,5 l', 6, 'bottle'));
+  });
+
+  it('reads ITEM, HOW_MUCH, UNIT with the unit in its own column', () => {
+    expect(parseImportLine('peas, 2, bag')).toEqual(c('peas', 2, 'bag'));
+    expect(parseImportLine('peas, 2, bags')).toEqual(c('peas', 2, 'bag'));
+    expect(parseImportLine('rice, 1,5, kg')).toEqual(c('rice', 1.5, 'kg'));
+    expect(parseImportLine('sausages; 3; links')).toEqual(c('sausages', 3, 'links'));
+    expect(parseImportLine('Jogurt, 3, kom')).toEqual(c('Jogurt', 3, 'pcs'));
+  });
+
+  it('reads ITEM, SOME/PLENTY/LOW/EMPTY as a rough amount, in either language', () => {
+    expect(parseImportLine('flour, some')).toEqual({ name: 'flour', amount: null, unit: null, level: 'some' });
+    expect(parseImportLine('Salt, PLENTY')).toEqual({ name: 'Salt', amount: null, unit: null, level: 'plenty' });
+    expect(parseImportLine('milk - low')).toEqual({ name: 'milk', amount: null, unit: null, level: 'low' });
+    expect(parseImportLine('šećer, nema')).toEqual({ name: 'šećer', amount: null, unit: null, level: 'empty' });
+    expect(parseImportLine('brašno; nešto')).toEqual({ name: 'brašno', amount: null, unit: null, level: 'some' });
+  });
+
+  it("doesn't mistake words inside a name for a level or a separator", () => {
+    expect(parseImportLine('Low-fat milk, 2 l')).toEqual(c('Low-fat milk', 2, 'l'));
+    expect(parseImportLine('Some cheese')).toEqual(c('Some cheese', null, null));
   });
 
   it('splits pasted text into lines and skips blanks', () => {
@@ -32,7 +55,7 @@ describe('combining an import list', () => {
     const out = combineDrafts([
       draft({ name: 'Jogurt', amount: 2, unit: 'pcs', note: 'ZDR.JOG' }),
       draft({ name: ' jogurt ', amount: 1, unit: 'pcs', note: 'JOG.NAT' }),
-      draft({ name: 'Jogurt', amount: 1, unit: 'kg' }),
+      draft(c('Jogurt', 1, 'kg')),
       draft({ name: '  ' }),
     ]);
     expect(out.map((d) => [d.name, d.amount, d.unit, d.note])).toEqual([
