@@ -18,9 +18,8 @@
     type ItemDraft,
   } from '../../lib/stores/storage';
   import {
-    SINGLE,
     containersInCell,
-    coveredCellIds,
+    coveredOf,
     coversCell,
     fullPlaceLabel,
     formatQty,
@@ -28,10 +27,9 @@
     isSpanning,
     makePlaceOf,
     placeLabel,
-    spanAround,
-    spanBetween,
-    spanFits,
-    spanOf,
+    fitsAt,
+    placementOf,
+    shapeOf,
     selfAndDescendants,
     unitIcon,
     unitLocationLabel,
@@ -40,7 +38,7 @@
   import { describeEvent } from '../../lib/storage/history';
   import { normalizeText } from '../../lib/utils/normalize';
   import type { CatalogOption } from '../../lib/storage/suggest';
-  import type { StorageEvent, StorageItem, StorageLevel, StorageSpan, StorageUnit } from '../../lib/types';
+  import type { StorageEvent, StorageItem, StorageLevel, StorageUnit } from '../../lib/types';
   import ItemNameInput from './ItemNameInput.svelte';
   import QtyFields from './QtyFields.svelte';
   import UnitEditor from './UnitEditor.svelte';
@@ -82,8 +80,8 @@
   );
 
   // "Layer 1 (top) – Layer 2 › 3" — the place without the unit's own name.
-  function spanText(item: Pick<StorageItem, 'cellId' | 'span'>): string {
-    return placeLabel(unit, item.cellId, $t, spanOf(item)).slice(unit.name.length + 3);
+  function spanText(item: Pick<StorageItem, 'cellId' | 'span' | 'cells'>): string {
+    return placeLabel(unit, item.cellId, $t, shapeOf(item)).slice(unit.name.length + 3);
   }
 
   let view = $state<'list' | 'edit' | 'move' | 'newContainer'>('list');
@@ -256,12 +254,10 @@
   let edExpiry = $state('');
   let edNote = $state('');
   let history = $state<StorageEvent[] | null>(null);
-  // Space: tapping a cell makes the item cover the box between its top-back-
-  // left corner and that cell; "one cell" shrinks it back to this cell.
-  let edCorner = $state(''); // the fixed corner taps stretch from
-  let edCellId = $state('');
-  let edSpan = $state<StorageSpan>(SINGLE);
-  let edCovered = $derived(new Set(coveredCellIds(edCellId, edSpan)));
+  // Space: exactly the cells it takes up — each tap adds or removes one
+  // (any shape); "Just this cell" shrinks it back to the cell opened here.
+  let edCovered = $state<Set<string>>(new Set());
+  let edPlacement = $derived(placementOf(edCovered));
 
   function startEdit(item: StorageItem) {
     editing = item;
@@ -273,9 +269,7 @@
     edLevel = item.level ?? 'some';
     edExpiry = item.expiry ?? '';
     edNote = item.note ?? '';
-    edCorner = item.cellId;
-    edCellId = item.cellId;
-    edSpan = spanOf(item);
+    edCovered = new Set(coveredOf(item));
     history = null;
     view = 'edit';
     loadItemHistory(groupId, item.id)
@@ -293,7 +287,7 @@
       expiry: edExpiry || null,
       note: edNote.trim(),
     };
-    const space = { cellId: edCellId, span: edSpan };
+    const space = edPlacement;
     run(async () => {
       await updateItem(groupId, item, { ...patch, ...space }, categoriesFor(edName, edPicked), placeOf);
       view = 'list';
@@ -313,15 +307,15 @@
     });
   }
 
-  // Tap: the box between the fixed corner and this cell. Ctrl/⌘+click: grow
-  // the current box to take in this cell too.
-  function pickCorner(id: string, e: MouseEvent) {
-    if (e.ctrlKey || e.metaKey) {
-      ({ cellId: edCellId, span: edSpan } = spanAround([...edCovered, id]));
-      edCorner = edCellId;
+  function toggleCell(id: string) {
+    const next = new Set(edCovered);
+    if (next.has(id)) {
+      if (next.size === 1) return; // it has to be somewhere
+      next.delete(id);
     } else {
-      ({ cellId: edCellId, span: edSpan } = spanBetween(edCorner, id));
+      next.add(id);
     }
+    edCovered = next;
   }
 
   // ── Move ──
@@ -338,7 +332,7 @@
   function confirmMove() {
     if (!moveUnit || !moveCellId) return;
     const target = moveCellId;
-    const tooBig = selectedItems.filter((i) => !spanFits(moveUnit!, target, spanOf(i)));
+    const tooBig = selectedItems.filter((i) => !fitsAt(moveUnit!, i, target));
     if (tooBig.length > 0) {
       error = $t('storage.spanNoFit', { names: tooBig.map((i) => i.name).join(', ') });
       return;
@@ -570,11 +564,11 @@
     <div class="stack field">
       <span class="muted">{$t('storage.space')}</span>
       <span class="muted">{$t('storage.spaceHint')}</span>
-      <UnitGrid unit={unit} items={[]} compact highlight={edCovered} selected={edCorner} onPick={pickCorner} />
+      <UnitGrid unit={unit} items={[]} compact highlight={edCovered} onPick={toggleCell} />
       <div class="row">
-        <span class="muted">{spanText({ cellId: edCellId, span: edSpan })}</span>
+        <span class="muted">{spanText(edPlacement)}</span>
         {#if edCovered.size > 1}
-          <button type="button" onclick={() => ((edCorner = edCellId = cellId), (edSpan = SINGLE))}>{$t('storage.spaceReset')}</button>
+          <button type="button" onclick={() => (edCovered = new Set([cellId]))}>{$t('storage.spaceReset')}</button>
         {/if}
       </div>
     </div>

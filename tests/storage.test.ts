@@ -8,8 +8,10 @@ import {
   levelLabel,
   orphanedItems,
   placeLabel,
-  spanBetween,
-  spanFits,
+  placementOf,
+  fitsAt,
+  cellsFit,
+  shiftCells,
   containersInCell,
   fullPlaceLabel,
   orphanedContainers,
@@ -21,7 +23,6 @@ import {
   ROOM_CELL,
   canMerge,
   usualPlace,
-  spanAround,
 } from '../src/lib/storage/layout';
 import { matchQuality, mergeCatalog, searchItems, suggest } from '../src/lib/storage/suggest';
 import { SYSTEM_ITEMS } from '../src/lib/storage/systemCatalog';
@@ -214,15 +215,19 @@ describe('storage spans', () => {
     expect(coveredCellIds('1.1.1')).toEqual(['1.1.1']);
   });
 
-  it('builds the same box whichever corner is tapped first', () => {
-    expect(spanBetween('2.2.3', '1.1.3')).toEqual({ cellId: '1.1.3', span: { levels: 2, rows: 2, cols: 1 } });
-    expect(spanBetween('1.1.3', '2.2.3')).toEqual(spanBetween('2.2.3', '1.1.3'));
+  it('stores exactly the picked cells, anchored at the first one', () => {
+    expect(placementOf(['2.2.3', '1.1.3'])).toEqual({ cellId: '1.1.3', cells: ['1.1.3', '2.2.3'] });
+    expect(placementOf(['2.1.1'])).toEqual({ cellId: '2.1.1', cells: null });
+    expect(placementOf(['1.1.1', '1.1.1'])).toEqual({ cellId: '1.1.1', cells: null });
   });
 
-  it('checks a span stays inside the unit', () => {
-    expect(spanFits(unit(), '2.1.4', { levels: 2, rows: 1, cols: 1 })).toBe(true);
-    expect(spanFits(unit(), '3.1.4', { levels: 2, rows: 1, cols: 1 })).toBe(false);
-    expect(spanFits(unit(), '1.1.4', { levels: 1, rows: 1, cols: 2 })).toBe(false);
+  it('checks a shape stays inside the unit, also once moved', () => {
+    expect(cellsFit(unit(), ['2.1.4', '3.1.4'])).toBe(true);
+    expect(cellsFit(unit(), ['3.1.4', '4.1.4'])).toBe(false);
+    const tall = item({ cellId: '1.1.1', cells: ['1.1.1', '2.1.1'] });
+    expect(fitsAt(unit(), tall, '2.1.4')).toBe(true);
+    expect(fitsAt(unit(), tall, '3.1.4')).toBe(false);
+    expect(shiftCells(['1.1.1', '2.1.2'], '1.1.1', '2.1.3')).toEqual(['2.1.3', '3.1.4']);
   });
 
   it('shows a spanning item in every cell it covers, next to small items', () => {
@@ -366,10 +371,23 @@ describe('putting imported things away', () => {
   });
 });
 
-describe('growing a selection with Ctrl+click', () => {
-  it('covers every clicked cell with the smallest box', () => {
-    expect(spanAround(['2.1.1'])).toEqual({ cellId: '2.1.1', span: { levels: 1, rows: 1, cols: 1 } });
-    expect(spanAround(['2.1.1', '2.2.1'])).toEqual({ cellId: '2.1.1', span: { levels: 1, rows: 2, cols: 1 } });
-    expect(spanAround(['3.1.2', '1.1.1', '2.1.3'])).toEqual({ cellId: '1.1.1', span: { levels: 3, rows: 1, cols: 3 } });
+describe('exact cells instead of boxes', () => {
+  it('covers only the cells picked, in any shape', () => {
+    const diagonal = item({ cellId: '1.1.1', cells: ['1.1.1', '2.1.2'] });
+    expect(coversCell(diagonal, '2.1.2')).toBe(true);
+    expect(coversCell(diagonal, '1.1.2')).toBe(false);
+    expect(coversCell(diagonal, '2.1.1')).toBe(false);
+  });
+
+  it('still reads older box-shaped spans', () => {
+    const old = item({ cellId: '1.1.1', span: { levels: 2, rows: 1, cols: 2 } });
+    expect(coversCell(old, '2.1.2')).toBe(true);
+  });
+
+  it('labels a box as a range and any other shape as a list', () => {
+    expect(placeLabel(unit(), '1.1.1', t, ['1.1.1', '1.1.2'])).toBe('Freezer › storage.level.chest(1) (storage.top) › 1 – 2');
+    expect(placeLabel(unit(), '1.1.1', t, ['1.1.1', '2.1.2'])).toBe(
+      'Freezer › storage.level.chest(1) (storage.top) › 1 + storage.level.chest(2) › 2',
+    );
   });
 });

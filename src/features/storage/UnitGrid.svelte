@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from '../../lib/i18n';
-  import { SINGLE, cellLabel, coveredCellIds, isLow, isSpanning, levelCellIds, levelLabel, spanOf, unitIcon } from '../../lib/storage/layout';
+  import { cellLabel, coveredOf, isLow, isSpanning, levelCellIds, levelLabel, unitIcon } from '../../lib/storage/layout';
   import type { StorageItem, StorageUnit } from '../../lib/types';
 
   // The 2D view of one unit, generated purely from its template numbers:
@@ -30,7 +30,7 @@
     const map = new Map<string, StorageItem[]>();
     // A spanning item shows up in every cell it covers, listed first there.
     for (const item of items) {
-      for (const id of coveredCellIds(item.cellId, spanOf(item))) {
+      for (const id of coveredOf(item)) {
         const list = map.get(id) ?? [];
         list.push(item);
         map.set(id, list);
@@ -46,7 +46,7 @@
     const map = new Map<string, StorageUnit[]>();
     for (const c of containers) {
       if (!c.parent) continue;
-      for (const id of coveredCellIds(c.parent.cellId, c.parent.span ?? SINGLE)) {
+      for (const id of coveredOf(c.parent)) {
         const list = map.get(id) ?? [];
         list.push(c);
         map.set(id, list);

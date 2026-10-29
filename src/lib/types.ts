@@ -303,7 +303,8 @@ export interface StorageUnit {
 export interface StoragePlacement {
   unitId: string;
   cellId: string;
-  span?: StorageSpan | null;
+  cells?: string[] | null; // when it takes up several cells (see StorageItem.cells)
+  span?: StorageSpan | null; // older placements only
 }
 
 export type StorageLevel = 'plenty' | 'some' | 'low' | 'empty';
@@ -322,8 +323,12 @@ export interface StorageSpan {
 export interface StorageItem {
   id: string;
   unitId: string;
-  cellId: string; // the item's anchor cell; see span
-  span?: StorageSpan | null; // absent/null = just the one cell
+  cellId: string; // the item's anchor cell (the first of `cells`)
+  // Exactly which cells it takes up, when more than one — any shape, e.g. both
+  // depths of a shelf, or an L. Older entries used `span` (a box from the
+  // anchor) instead; both are read, new writes use `cells`.
+  cells?: string[] | null;
+  span?: StorageSpan | null;
   name: string;
   nameKey: string; // normalizeText(name) — also the group catalog doc id
   // Exact ("3 pcs", "500 g") or vague ("some") — switchable per item.

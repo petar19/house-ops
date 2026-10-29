@@ -6,11 +6,10 @@
   import {
     cellExists,
     cellLabel,
-    coveredCellIds,
+    coveredOf,
     levelLabel,
     isRoom,
     parseCellId,
-    spanOf,
     unitIcon,
     unitLocationLabel,
   } from '../../lib/storage/layout';
@@ -85,7 +84,7 @@
 
   let matches = $derived(searchItems(q, unitItems, $catalogOptions));
   let matchIds = $derived(new Set(matches.map((i) => i.id)));
-  let highlightCells = $derived(new Set(matches.flatMap((i) => coveredCellIds(i.cellId, spanOf(i)))));
+  let highlightCells = $derived(new Set(matches.flatMap((i) => coveredOf(i))));
 
   let cellTitle = $derived.by(() => {
     if (!unit || !openCellId) return '';

@@ -64,17 +64,16 @@ export function allCellIds(shape: Omit<UnitShape, 'kind'>): string[] {
   return ids;
 }
 
-// ── Spans ────────────────────────────────────────────────────────────────
+// ── Space taken up ───────────────────────────────────────────────────────
 
 export const SINGLE: StorageSpan = { levels: 1, rows: 1, cols: 1 };
 
-export function spanOf(item: { span?: StorageSpan | null }): StorageSpan {
-  return item.span ?? SINGLE;
-}
+// How much room something takes, as stored: an explicit list of cells
+// (any shape), or — on older entries — a box counted from the anchor.
+export type Shape = string[] | StorageSpan | null | undefined;
 
-export function isSpanning(item: { span?: StorageSpan | null }): boolean {
-  const s = spanOf(item);
-  return s.levels > 1 || s.rows > 1 || s.cols > 1;
+export function shapeOf(x: { cells?: string[] | null; span?: StorageSpan | null }): Shape {
+  return x.cells && x.cells.length > 0 ? x.cells : (x.span ?? null);
 }
 
 /** Every cell an item anchored at `id` with `span` covers. */
@@ -90,44 +89,69 @@ export function coveredCellIds(id: string, span: StorageSpan = SINGLE): string[]
   return ids;
 }
 
-export function spanFits(shape: Omit<UnitShape, 'kind'>, id: string, span: StorageSpan = SINGLE): boolean {
-  return coveredCellIds(id, span).every((c) => cellExists(shape, c));
+/** The cells something anchored at `id` takes up. */
+export function cellsOf(id: string, shape: Shape): string[] {
+  if (Array.isArray(shape)) return shape.length > 0 ? shape : [id];
+  return coveredCellIds(id, shape ?? SINGLE);
 }
 
-/** The box between two cells (either order) as an anchor + span. */
-export function spanBetween(a: string, b: string): { cellId: string; span: StorageSpan } {
+export function coveredOf(x: { cellId: string; cells?: string[] | null; span?: StorageSpan | null }): string[] {
+  return cellsOf(x.cellId, shapeOf(x));
+}
+
+export function isSpanning(x: { cellId?: string; cells?: string[] | null; span?: StorageSpan | null }): boolean {
+  if (x.cells && x.cells.length > 1) return true;
+  const s = x.span ?? SINGLE;
+  return s.levels > 1 || s.rows > 1 || s.cols > 1;
+}
+
+export function cellsFit(shape: Omit<UnitShape, 'kind'>, cells: string[]): boolean {
+  return cells.every((c) => cellExists(shape, c));
+}
+
+const order = (a: string, b: string) => {
   const p = parseCellId(a);
   const q = parseCellId(b);
-  if (!p || !q) return { cellId: a, span: SINGLE };
-  return {
-    cellId: cellId(Math.min(p.level, q.level), Math.min(p.row, q.row), Math.min(p.col, q.col)),
-    span: {
-      levels: Math.abs(p.level - q.level) + 1,
-      rows: Math.abs(p.row - q.row) + 1,
-      cols: Math.abs(p.col - q.col) + 1,
-    },
-  };
+  if (!p || !q) return a.localeCompare(b);
+  return p.level - q.level || p.row - q.row || p.col - q.col;
+};
+
+/**
+ * A picked set of cells as something to store: the anchor is the first one
+ * (top, back, left); `cells` only when there's more than one.
+ */
+export function placementOf(cells: Iterable<string>): { cellId: string; cells: string[] | null } {
+  const sorted = [...new Set(cells)].sort(order);
+  return { cellId: sorted[0] ?? '', cells: sorted.length > 1 ? sorted : null };
 }
 
-/** The smallest box covering all the given cells (Ctrl+click to grow a selection). */
-export function spanAround(ids: string[]): { cellId: string; span: StorageSpan } {
-  const ps = ids.map(parseCellId).filter((p): p is NonNullable<typeof p> => !!p);
-  if (ps.length === 0) return { cellId: ids[0] ?? '', span: SINGLE };
-  const lo = { level: Math.min(...ps.map((p) => p.level)), row: Math.min(...ps.map((p) => p.row)), col: Math.min(...ps.map((p) => p.col)) };
-  const hi = { level: Math.max(...ps.map((p) => p.level)), row: Math.max(...ps.map((p) => p.row)), col: Math.max(...ps.map((p) => p.col)) };
-  return {
-    cellId: cellId(lo.level, lo.row, lo.col),
-    span: { levels: hi.level - lo.level + 1, rows: hi.row - lo.row + 1, cols: hi.col - lo.col + 1 },
-  };
+/** The same shape moved so its anchor sits at `toAnchor` (for moving things). */
+export function shiftCells(cells: string[], fromAnchor: string, toAnchor: string): string[] {
+  const a = parseCellId(fromAnchor);
+  const b = parseCellId(toAnchor);
+  if (!a || !b) return [toAnchor];
+  return cells.map((c) => {
+    const p = parseCellId(c);
+    return p ? cellId(p.level + b.level - a.level, p.row + b.row - a.row, p.col + b.col - a.col) : c;
+  });
 }
 
-export function coversCell(item: Pick<StorageItem, 'cellId' | 'span'>, id: string): boolean {
-  return coveredCellIds(item.cellId, spanOf(item)).includes(id);
+/** Whether something keeps fitting when its anchor moves to `toAnchor` in `shape`. */
+export function fitsAt(
+  shape: Omit<UnitShape, 'kind'>,
+  x: { cellId: string; cells?: string[] | null; span?: StorageSpan | null },
+  toAnchor: string,
+): boolean {
+  return cellsFit(shape, shiftCells(coveredOf(x), x.cellId, toAnchor));
+}
+
+export function coversCell(item: { cellId: string; cells?: string[] | null; span?: StorageSpan | null }, id: string): boolean {
+  return coveredOf(item).includes(id);
 }
 
 /** Items that would no longer fit (some covered cell gone) in a new shape. */
 export function orphanedItems(shape: Omit<UnitShape, 'kind'>, items: StorageItem[]): StorageItem[] {
-  return items.filter((i) => !spanFits(shape, i.cellId, spanOf(i)));
+  return items.filter((i) => !cellsFit(shape, coveredOf(i)));
 }
 
 export function levelLabel(unit: Pick<StorageUnit, 'kind' | 'levels' | 'levelNames'>, level: number, t: Translate): string {
@@ -164,15 +188,24 @@ export function cellLabel(unit: Pick<StorageUnit, 'rows' | 'cols' | 'cellNames'>
   return [rowLabel(unit.rows, p.row, t), colLabel(unit.cols, p.col, t)].filter(Boolean).join(' · ');
 }
 
-/**
- * Full breadcrumb, e.g. "Chest freezer › Layer 2 › 3". A spanning item reads
- * as ranges: "Chest freezer › Layer 1 (top) – Layer 2 › 3".
- */
-export function placeLabel(unit: StorageUnit, id: string, t: Translate, span: StorageSpan = SINGLE): string {
-  // A room has no shelves or cells to name — being in it is just its name.
-  if (unit.kind === 'room') return unit.name;
+/** If the cells form a full box, that box as anchor + span. */
+function asBox(cells: string[]): { cellId: string; span: StorageSpan } | null {
+  const ps = cells.map(parseCellId);
+  if (ps.some((p) => !p)) return null;
+  const pts = ps as { level: number; row: number; col: number }[];
+  const lo = { level: Math.min(...pts.map((p) => p.level)), row: Math.min(...pts.map((p) => p.row)), col: Math.min(...pts.map((p) => p.col)) };
+  const span = {
+    levels: Math.max(...pts.map((p) => p.level)) - lo.level + 1,
+    rows: Math.max(...pts.map((p) => p.row)) - lo.row + 1,
+    cols: Math.max(...pts.map((p) => p.col)) - lo.col + 1,
+  };
+  if (span.levels * span.rows * span.cols !== new Set(cells).size) return null;
+  return { cellId: cellId(lo.level, lo.row, lo.col), span };
+}
+
+function boxLabel(unit: StorageUnit, id: string, t: Translate, span: StorageSpan): string[] {
   const p = parseCellId(id);
-  const parts = [unit.name];
+  const parts: string[] = [];
   if (p) {
     const top = levelLabel(unit, p.level, t);
     parts.push(span.levels > 1 ? `${top} – ${levelLabel(unit, p.level + span.levels - 1, t)}` : top);
@@ -184,11 +217,36 @@ export function placeLabel(unit: StorageUnit, id: string, t: Translate, span: St
   } else if (cell) {
     parts.push(cell);
   }
-  return parts.join(' › ');
+  return parts;
+}
+
+/**
+ * Full breadcrumb, e.g. "Chest freezer › Layer 2 › 3". Something taking up
+ * several cells reads as a range when they form a box ("Layer 1 – Layer 2
+ * › 3"), otherwise as a list ("Layer 1 › 1 + Layer 2 › 2").
+ */
+export function placeLabel(unit: StorageUnit, id: string, t: Translate, shape: Shape = null): string {
+  // A room has no shelves or cells to name — being in it is just its name.
+  if (unit.kind === 'room') return unit.name;
+  const cells = cellsOf(id, shape);
+  if (cells.length <= 1) return [unit.name, ...boxLabel(unit, id, t, SINGLE)].join(' › ');
+  const box = asBox(cells);
+  if (box) return [unit.name, ...boxLabel(unit, box.cellId, t, box.span)].join(' › ');
+  // Any other shape: per level, the cells taken up there.
+  const byLevel = new Map<number, string[]>();
+  for (const c of [...cells].sort(order)) {
+    const level = parseCellId(c)?.level ?? 0;
+    byLevel.set(level, [...(byLevel.get(level) ?? []), c]);
+  }
+  const pieces = [...byLevel].map(([level, ids]) => {
+    const names = ids.map((c) => cellLabel(unit, c, t)).filter(Boolean);
+    return [levelLabel(unit, level, t), ...(names.length ? [names.join(' + ')] : [])].join(' › ');
+  });
+  return `${unit.name} › ${pieces.join(' + ')}`;
 }
 
 /** Resolves a unit + anchor cell (+ span) to its breadcrumb. */
-export type PlaceOf = (unitId: string, cellId: string, span?: StorageSpan | null) => string;
+export type PlaceOf = (unitId: string, cellId: string, shape?: Shape) => string;
 
 // Containers nest, but a corrupt parent chain must never hang the UI.
 const MAX_DEPTH = 12;
@@ -197,30 +255,30 @@ const MAX_DEPTH = 12;
  * Breadcrumb through every container a place is inside, e.g. "Garage
  * shelves › Shelf 2 › Left › Red toolbox › Top tray".
  */
-export function fullPlaceLabel(units: StorageUnit[], unitId: string, id: string, t: Translate, span?: StorageSpan | null): string {
+export function fullPlaceLabel(units: StorageUnit[], unitId: string, id: string, t: Translate, shape?: Shape): string {
   const parts: string[] = [];
-  let current: { unitId: string; cellId: string; span?: StorageSpan | null } | null = { unitId, cellId: id, span };
+  let current: { unitId: string; cellId: string; shape: Shape } | null = { unitId, cellId: id, shape };
   for (let depth = 0; current && depth < MAX_DEPTH; depth++) {
-    const here: { unitId: string; cellId: string; span?: StorageSpan | null } = current;
+    const here: { unitId: string; cellId: string; shape: Shape } = current;
     const unit = units.find((u) => u.id === here.unitId);
     if (!unit) {
       parts.unshift(here.cellId);
       break;
     }
-    parts.unshift(placeLabel(unit, here.cellId, t, here.span ?? SINGLE));
-    current = unit.parent ?? null;
+    parts.unshift(placeLabel(unit, here.cellId, t, here.shape));
+    current = unit.parent ? { unitId: unit.parent.unitId, cellId: unit.parent.cellId, shape: shapeOf(unit.parent) } : null;
   }
   return parts.join(' › ');
 }
 
 /** Where a unit itself sits ("Garage shelves › Shelf 2 › Left"), or null if loose. */
 export function unitLocationLabel(units: StorageUnit[], unit: StorageUnit, t: Translate): string | null {
-  return unit.parent ? fullPlaceLabel(units, unit.parent.unitId, unit.parent.cellId, t, unit.parent.span) : null;
+  return unit.parent ? fullPlaceLabel(units, unit.parent.unitId, unit.parent.cellId, t, shapeOf(unit.parent)) : null;
 }
 
 /** Binds the current units + translator into a PlaceOf. */
 export function makePlaceOf(units: StorageUnit[], t: Translate): PlaceOf {
-  return (unitId, id, span) => fullPlaceLabel(units, unitId, id, t, span);
+  return (unitId, id, shape) => fullPlaceLabel(units, unitId, id, t, shape);
 }
 
 // ── Containers ─────────────────────────────────────────────────────────────
@@ -250,13 +308,13 @@ export function placeableTargets(units: StorageUnit[], container: StorageUnit): 
 /** Containers sitting in (or reaching into) a given cell of a unit. */
 export function containersInCell(units: StorageUnit[], unitId: string, id: string): StorageUnit[] {
   return units.filter(
-    (u) => u.parent?.unitId === unitId && coveredCellIds(u.parent.cellId, u.parent.span ?? SINGLE).includes(id),
+    (u) => u.parent?.unitId === unitId && coveredOf(u.parent).includes(id),
   );
 }
 
 /** Containers that would no longer fit if `unitId` took a new shape. */
 export function orphanedContainers(shape: Omit<UnitShape, 'kind'>, units: StorageUnit[], unitId: string): StorageUnit[] {
-  return units.filter((u) => u.parent?.unitId === unitId && !spanFits(shape, u.parent.cellId, u.parent.span ?? SINGLE));
+  return units.filter((u) => u.parent?.unitId === unitId && !cellsFit(shape, coveredOf(u.parent)));
 }
 
 export function unitIcon(unit: Pick<StorageUnit, 'kind' | 'icon'>): string {
@@ -320,12 +378,12 @@ export function roomOf(units: StorageUnit[], unitId: string): StorageUnit | null
 export function usualPlace(
   catalog: { id: string; lastPlace?: { unitId: string; cellId: string } | null }[],
   units: StorageUnit[],
-  item: Pick<StorageItem, 'nameKey' | 'unitId' | 'cellId' | 'span'>,
+  item: Pick<StorageItem, 'nameKey' | 'unitId' | 'cellId' | 'span' | 'cells'>,
 ): { unitId: string; cellId: string } | null {
   const place = catalog.find((e) => e.id === item.nameKey)?.lastPlace;
   if (!place) return null;
   const unit = units.find((u) => u.id === place.unitId);
-  if (!unit || unit.inbox || !spanFits(unit, place.cellId, spanOf(item))) return null;
+  if (!unit || unit.inbox || !fitsAt(unit, item, place.cellId)) return null;
   if (place.unitId === item.unitId && place.cellId === item.cellId) return null; // already there
   return { unitId: place.unitId, cellId: place.cellId };
 }

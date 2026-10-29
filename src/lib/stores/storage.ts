@@ -24,7 +24,7 @@ import { normalizeText } from '../utils/normalize';
 import { locale } from '../i18n';
 import { SYSTEM_ITEMS } from '../storage/systemCatalog';
 import { mergeCatalog } from '../storage/suggest';
-import { canMerge, isSpanning, type PlaceOf } from '../storage/layout';
+import { canMerge, cellsOf, coveredOf, isSpanning, shapeOf, shiftCells, type PlaceOf } from '../storage/layout';
 import { combineDrafts, type ImportDraft } from '../storage/importParse';
 import type {
   ReceiptItemRequest,
@@ -34,7 +34,6 @@ import type {
   StorageItem,
   StorageLevel,
   StoragePlacement,
-  StorageSpan,
   StorageUnit,
   StorageUnitKind,
 } from '../types';
@@ -312,14 +311,13 @@ export async function addItem(
 
 const TRACKED_FIELDS: (keyof ItemDraft)[] = ['name', 'qtyMode', 'amount', 'unit', 'level', 'expiry', 'note'];
 
-/** Where an item sits: a new anchor cell and/or how much space it takes. */
+/** Where an item sits: its anchor cell and, if more than one, exactly which cells. */
 export interface SpaceDraft {
   cellId: string;
-  span: StorageSpan | null;
+  cells: string[] | null;
 }
 
-const sameSpan = (a: StorageSpan | null | undefined, b: StorageSpan | null | undefined) =>
-  (a?.levels ?? 1) === (b?.levels ?? 1) && (a?.rows ?? 1) === (b?.rows ?? 1) && (a?.cols ?? 1) === (b?.cols ?? 1);
+const sameCells = (a: string[], b: string[]) => a.length === b.length && a.every((c) => b.includes(c));
 
 export async function updateItem(
   groupId: string,
@@ -333,17 +331,21 @@ export async function updateItem(
     if (key in patch && patch[key] !== item[key]) changes[key] = { from: item[key] ?? null, to: patch[key] ?? null };
   }
   const cellId = patch.cellId ?? item.cellId;
-  const span = 'span' in patch ? patch.span : item.span;
-  if (cellId !== item.cellId || !sameSpan(span, item.span)) {
-    // Logged as the place it covered before and after, not raw numbers.
-    changes.space = { from: placeOf(item.unitId, item.cellId, item.span), to: placeOf(item.unitId, cellId, span) };
+  const before = coveredOf(item);
+  const after = 'cells' in patch ? cellsOf(cellId, patch.cells) : before;
+  if (cellId !== item.cellId || !sameCells(before, after)) {
+    // Logged as the place it covered before and after, not raw cell ids.
+    changes.space = { from: placeOf(item.unitId, item.cellId, shapeOf(item)), to: placeOf(item.unitId, cellId, after) };
   }
   if (Object.keys(changes).length === 0) return;
 
   const batch = writeBatch(db);
   const update: Record<string, unknown> = { ...patch, updatedAt: Date.now(), updatedBy: uid() };
-  // A single cell is stored as no span at all, same as items that never had one.
-  if ('span' in patch) update.span = span && !sameSpan(span, null) ? span : null;
+  // Space is now always stored as the exact cells; the older box form goes.
+  if ('cells' in patch) {
+    update.cells = after.length > 1 ? after : null;
+    update.span = null;
+  }
   if (changes.name) {
     const name = String(patch.name).trim();
     update.name = name;
@@ -357,7 +359,7 @@ export async function updateItem(
     itemName: (update.name as string | undefined) ?? item.name,
     unitId: item.unitId,
     cellId,
-    place: placeOf(item.unitId, cellId, span),
+    place: placeOf(item.unitId, cellId, after),
     changes,
   });
   await batch.commit();
@@ -377,6 +379,8 @@ export async function moveItems(
   // so two "peas" lines moved together also end up as one.
   const atTarget: StorageItem[] = get(storageItems).filter((i) => i.unitId === toUnitId && i.cellId === toCellId);
   const runningAmount = new Map<string, number>();
+  // Something taking up several cells keeps its shape, moved to the new anchor.
+  const movedCells = (item: StorageItem) => shiftCells(coveredOf(item), item.cellId, toCellId);
 
   // Up to 6 writes per item: the item, the entry it merges into, two
   // events and its catalog entry.
@@ -389,10 +393,10 @@ export async function moveItems(
         itemName: item.name,
         unitId: item.unitId,
         cellId: item.cellId,
-        place: placeOf(item.unitId, item.cellId, item.span),
+        place: placeOf(item.unitId, item.cellId, shapeOf(item)),
         toUnitId,
         toCellId,
-        toPlace: placeOf(toUnitId, toCellId, item.span),
+        toPlace: placeOf(toUnitId, toCellId, movedCells(item)),
       });
       const target = atTarget.find((t) => t.id !== item.id && canMerge(t, item));
       if (target) {
@@ -411,9 +415,12 @@ export async function moveItems(
           changes: { amount: { from: before, to: after } },
         });
       } else {
+        const cells = movedCells(item);
         batch.update(doc(col(groupId, 'storageItems'), item.id), {
           unitId: toUnitId,
           cellId: toCellId,
+          cells: cells.length > 1 ? cells : null,
+          span: null,
           updatedAt: now,
           updatedBy: me,
         });
@@ -439,7 +446,7 @@ export async function removeItems(groupId: string, items: StorageItem[], placeOf
         itemName: item.name,
         unitId: item.unitId,
         cellId: item.cellId,
-        place: placeOf(item.unitId, item.cellId, item.span),
+        place: placeOf(item.unitId, item.cellId, shapeOf(item)),
       });
     }
   });
@@ -509,7 +516,7 @@ export async function convertItemToContainer(groupId: string, item: StorageItem,
       icon: null,
       movable: true,
     },
-    { unitId: item.unitId, cellId: item.cellId, span: item.span ?? null },
+    { unitId: item.unitId, cellId: item.cellId, cells: isSpanning(item) ? coveredOf(item) : null },
   );
   await removeItems(groupId, [item], placeOf);
   return id;

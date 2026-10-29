@@ -22,6 +22,7 @@
     UNIT_ICONS,
     isRoom,
     roomOf,
+    shapeOf,
     fullPlaceLabel,
     levelLabel,
     makePlaceOf,
@@ -132,7 +133,7 @@
     try {
       await placeUnit(groupId, unit, parent, {
         from: location ?? $t('storage.loose'),
-        to: parent ? fullPlaceLabel($storageUnits, parent.unitId, parent.cellId, $t, parent.span) : $t('storage.loose'),
+        to: parent ? fullPlaceLabel($storageUnits, parent.unitId, parent.cellId, $t, shapeOf(parent)) : $t('storage.loose'),
       });
       placing = false;
     } catch (err) {
