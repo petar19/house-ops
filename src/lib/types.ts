@@ -157,6 +157,18 @@ export interface ReceiptLineItem {
   unit: string | null;
 }
 
+// groups/{groupId}/receiptTextRequests/{id} — a receipt pasted as text
+// (e.g. a shop's digital receipt) for Storage → Import; the OCR watcher reads
+// its products with Gemini into `items` and sets status 'done' or 'error'.
+export interface ReceiptTextRequest {
+  status: 'pending' | 'done' | 'error';
+  requestedBy: string;
+  requestedAt: number;
+  text: string;
+  items?: ReceiptLineItem[];
+  error?: string;
+}
+
 // groups/{groupId}/receiptItemRequests/{documentId} — the app asks for a
 // bill's products ('pending'); the OCR watcher (bot repo, receiptItems.ts)
 // reads them off its stored text into the document's lineItems and marks

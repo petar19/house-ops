@@ -8,17 +8,19 @@
     importToUnsorted,
     markReceiptImported,
     requestReceiptItems,
+    requestReceiptText,
     storageUnits,
     type ImportDraft,
   } from '../../lib/stores/storage';
   import { makePlaceOf } from '../../lib/storage/layout';
   import { matchQuality } from '../../lib/storage/suggest';
-  import type { DocumentRecord, DocumentVendor, ReceiptItemRequest } from '../../lib/types';
+  import type { DocumentRecord, DocumentVendor, ReceiptItemRequest, ReceiptTextRequest } from '../../lib/types';
   import ImportRows, { newRow, type ImportRow } from './ImportRows.svelte';
 
-  // Collect a whole shopping trip into Unsorted in one go — typed/pasted, or
-  // read off a scanned bill — then put things away from there whenever.
-  let mode = $state<'list' | 'bill'>('list');
+  // Collect a whole shopping trip into Unsorted in one go — typed/pasted, a
+  // receipt pasted as text, or read off a scanned bill — then put things
+  // away from there whenever.
+  let mode = $state<'list' | 'paste' | 'bill'>('list');
   let rows = $state<ImportRow[]>([newRow()]);
   let busy = $state(false);
   let error = $state('');
@@ -48,6 +50,7 @@
     error = '';
     try {
       const billNote = selectedBill ? `${selectedBill.vendor}${selectedBill.date ? ' ' + selectedBill.date : ''}: ` : '';
+      // Pasted receipts have no shop/date on hand — the raw line is note enough.
       const { unitId } = await importToUnsorted(groupId, $t('import.unsortedName'), toDrafts(ready, billNote), makePlaceOf($storageUnits, $t));
       if (selectedBill) {
         await markReceiptImported(groupId, selectedBill.id, requests.get(selectedBill.id)?.status ?? 'done');
@@ -172,12 +175,57 @@
     if (selectedBill) void chooseBill({ ...selectedBill, lineItems: undefined });
   }
 
-  function switchMode(m: 'list' | 'bill') {
+  function switchMode(m: 'list' | 'paste' | 'bill') {
     mode = m;
     selectedBill = null;
     rows = m === 'list' ? [newRow()] : [];
     error = '';
+    pasteRequestId = null;
+    pasteRequest = null;
   }
+
+  // ── Pasted receipt text ──
+  // Any shop's digital receipt, pasted as-is: the OCR watcher reads the
+  // products out of it with Gemini (same as a scanned bill), so the layout
+  // doesn't matter the way it does for the line-by-line list above.
+  let pasteText = $state('');
+  let pasteRequestId = $state<string | null>(null);
+  let pasteRequest = $state<ReceiptTextRequest | null>(null);
+  let pasteSince = $state<number | null>(null);
+
+  async function readPasted() {
+    if (!groupId || !pasteText.trim()) return;
+    error = '';
+    rows = [];
+    pasteRequest = null;
+    try {
+      pasteRequestId = await requestReceiptText(groupId, pasteText.trim().slice(0, 20000));
+      pasteSince = Date.now();
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  $effect(() => {
+    const id = pasteRequestId;
+    if (!id || !groupId) return;
+    const timer = setInterval(() => (now = Date.now()), 5000);
+    const unsub = onSnapshot(doc(db, 'groups', groupId, 'receiptTextRequests', id), (snap) => {
+      const req = snap.data() as ReceiptTextRequest | undefined;
+      if (!req) return;
+      pasteRequest = req;
+      if (req.status === 'done') {
+        rows = (req.items ?? []).map((li) => newRow({ name: li.name, amount: li.quantity ?? 1, unit: li.unit ?? '', raw: li.raw }));
+        pasteSince = null;
+      }
+    });
+    return () => {
+      unsub();
+      clearInterval(timer);
+    };
+  });
+
+  let pasteSlow = $derived(!!pasteSince && pasteRequest?.status !== 'done' && now - pasteSince > 45_000);
 </script>
 
 <div class="page stack">
@@ -190,6 +238,7 @@
     <p class="muted" style="margin:0">{$t('import.intro')}</p>
     <div class="tabs row">
       <button class:primary={mode === 'list'} onclick={() => switchMode('list')}>✍️ {$t('import.typeList')}</button>
+      <button class:primary={mode === 'paste'} onclick={() => switchMode('paste')}>📋 {$t('import.pasteReceipt')}</button>
       <button class:primary={mode === 'bill'} onclick={() => switchMode('bill')}>🧾 {$t('import.fromBill')}</button>
     </div>
 
@@ -197,6 +246,25 @@
       <div class="card stack">
         <p class="muted" style="margin:0">{$t('import.listHint')}</p>
         <ImportRows bind:rows />
+      </div>
+    {:else if mode === 'paste'}
+      <div class="card stack">
+        <p class="muted" style="margin:0">{$t('import.pasteHint')}</p>
+        <textarea rows="10" bind:value={pasteText} placeholder={$t('import.pastePlaceholder')}></textarea>
+        <div class="row">
+          <button class="primary" onclick={readPasted} disabled={!pasteText.trim() || (!!pasteRequestId && pasteRequest?.status !== 'done' && pasteRequest?.status !== 'error')}>
+            ✨ {$t('import.readWithAi')}
+          </button>
+        </div>
+        {#if pasteRequestId && pasteRequest?.status === 'error'}
+          <p class="muted" style="color: var(--danger); margin:0">{$t('import.readFailed', { error: pasteRequest.error ?? '' })}</p>
+        {:else if pasteRequestId && pasteRequest?.status !== 'done'}
+          <p class="muted" style="margin:0">⏳ {$t('import.readingText')}</p>
+          {#if pasteSlow}<p class="muted" style="margin:0">{$t('import.readingSlow')}</p>{/if}
+        {:else if pasteRequest?.status === 'done'}
+          <p class="muted" style="margin:0">{$t('import.billHint', { count: rows.length })}</p>
+          <ImportRows bind:rows showInclude />
+        {/if}
       </div>
     {:else if !canUseBills}
       <p class="muted">{$t('import.billsUnavailable')}</p>

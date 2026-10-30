@@ -580,3 +580,14 @@ export async function markReceiptImported(groupId: string, documentId: string, s
     { merge: true },
   );
 }
+
+/** Files a pasted receipt for the OCR watcher to read; returns the request id. */
+export async function requestReceiptText(groupId: string, text: string): Promise<string> {
+  const ref = await addDoc(col(groupId, 'receiptTextRequests'), {
+    status: 'pending',
+    requestedBy: uid(),
+    requestedAt: Date.now(),
+    text,
+  });
+  return ref.id;
+}

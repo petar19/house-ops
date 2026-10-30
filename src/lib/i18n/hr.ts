@@ -551,4 +551,9 @@ export const hr: Record<string, string> = {
   'storage.placeHint': 'Dodirni pretinac u koji ide — i sve ostale koje zauzima; ponovni dodir uklanja.',
   'storage.moveOrResize': 'Premjesti / promijeni veličinu…',
   'picker.clear': 'Očisti',
+  'import.pasteReceipt': 'Zalijepi račun',
+  'import.pasteHint': 'Zalijepi digitalni račun trgovine (e-mail, aplikacija) točno kakav jest — bilo koji oblik. AI izdvaja proizvode koje zatim provjeriš.',
+  'import.pastePlaceholder': 'Zalijepi tekst računa ovdje…',
+  'import.readWithAi': 'Pročitaj pomoću AI-ja',
+  'import.readingText': 'Čitam proizvode iz računa…',
 };

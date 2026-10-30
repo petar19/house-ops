@@ -551,4 +551,9 @@ export const en: Record<string, string> = {
   'storage.placeHint': 'Tap the cell it goes in — and any more cells it takes up; tap again to remove one.',
   'storage.moveOrResize': 'Move / resize…',
   'picker.clear': 'Clear',
+  'import.pasteReceipt': 'Paste a receipt',
+  'import.pasteHint': 'Paste a shop\'s digital receipt (email, app) exactly as it is — any layout. AI picks out the products for you to check.',
+  'import.pastePlaceholder': 'Paste the receipt text here…',
+  'import.readWithAi': 'Read with AI',
+  'import.readingText': 'Reading the products out of the receipt…',
 };
