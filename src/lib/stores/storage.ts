@@ -23,10 +23,13 @@ import { currentUser } from './auth';
 import { normalizeText } from '../utils/normalize';
 import { locale } from '../i18n';
 import { SYSTEM_ITEMS } from '../storage/systemCatalog';
-import { mergeCatalog } from '../storage/suggest';
+import { mergeCatalog, resolveProduct, type CatalogOption } from '../storage/suggest';
+import { unitPrice } from '../storage/pricing';
+import type { PriceUnit } from '../storage/systemCatalog';
 import { canMerge, cellsOf, coveredOf, isSpanning, shapeOf, shiftCells, type PlaceOf } from '../storage/layout';
 import { combineDrafts, type ImportDraft } from '../storage/importParse';
 import type {
+  Purchase,
   ReceiptItemRequest,
   StorageCatalogEntry,
   StorageCategory,
@@ -224,10 +227,24 @@ function touchCatalog(
   categoriesIfNew: string[],
   cellId?: string,
 ): void {
-  const key = normalizeText(name);
+  let key = normalizeText(name);
   if (!key) return;
+  let existing = get(storageCatalog).find((e) => e.id === key);
+  // Another spelling of a product the group already has an entry for (an
+  // alias, the other language): count it there instead of starting a second
+  // entry for the same product.
+  if (!existing) {
+    const product = resolveProduct(name, get(catalogOptions));
+    const entry = product
+      ? get(catalogOptions).find((o) => o.source === 'group' && !o.hidden && o.productKey === product.productKey)
+      : undefined;
+    if (entry) {
+      key = entry.key;
+      existing = get(storageCatalog).find((e) => e.id === key);
+      name = entry.name;
+    }
+  }
   const ref = doc(col(groupId, 'storageCatalog'), key);
-  const existing = get(storageCatalog).find((e) => e.id === key);
   const placed = !isInbox(unitId);
   const lastPlace = placed && cellId ? { lastPlace: { unitId, cellId, span: null } } : {};
   if (existing) {
@@ -590,4 +607,129 @@ export async function requestReceiptText(groupId: string, text: string): Promise
     text,
   });
   return ref.id;
+}
+
+// ── Purchases (price history) ─────────────────────────────────────────────
+
+export type PurchaseDraft = Omit<Purchase, 'id' | 'createdAt' | 'createdBy' | 'unitPrice' | 'priceUnit' | 'productKey'>;
+
+/**
+ * Records bought lines. Each is filed under the product its name resolves to
+ * (any spelling or alias), or — for a brand-new name — under that name's own
+ * key, which is the catalog entry adding the item creates.
+ */
+export async function recordPurchases(groupId: string, drafts: PurchaseDraft[]): Promise<void> {
+  const options = get(catalogOptions);
+  const me = uid();
+  await inChunks(drafts, 400, (batch, chunk) => {
+    for (const d of chunk) {
+      const product = resolveProduct(d.name, options);
+      const priceUnit = product?.priceUnit ?? guessPriceUnit(d.unit, d.packUnit);
+      batch.set(doc(col(groupId, 'purchases')), {
+        ...d,
+        productKey: product?.productKey ?? normalizeText(d.name),
+        priceUnit,
+        unitPrice: unitPrice(d, priceUnit),
+        createdAt: Date.now(),
+        createdBy: me,
+      } satisfies Omit<Purchase, 'id'>);
+    }
+  });
+}
+
+// A product nobody's described yet: weigh it if it was bought by weight.
+function guessPriceUnit(unit: string | null, packUnit: string | null): PriceUnit {
+  const u = (packUnit ?? unit ?? '').toLowerCase();
+  if (u === 'kg' || u === 'g') return 'kg';
+  if (u === 'l' || u === 'ml') return 'l';
+  return 'pcs';
+}
+
+/** Every purchase of one product (and anything merged into it), newest first. */
+export async function loadPurchases(groupId: string, productKeys: string[]): Promise<Purchase[]> {
+  const snaps = await Promise.all(
+    productKeys.map((k) => getDocs(query(col(groupId, 'purchases'), where('productKey', '==', k)))),
+  );
+  return snaps
+    .flatMap((snap) => snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Purchase, 'id'>) })))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+}
+
+/** All purchases, for the Products list's "last bought / last price". */
+export async function loadAllPurchases(groupId: string): Promise<Purchase[]> {
+  const snap = await getDocs(col(groupId, 'purchases'));
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Purchase, 'id'>) }));
+}
+
+export async function deletePurchase(groupId: string, id: string): Promise<void> {
+  await deleteDoc(doc(col(groupId, 'purchases'), id));
+}
+
+// ── Products page edits ───────────────────────────────────────────────────
+
+/** The group's catalog doc for a product, created (as its version of a built-in one) if needed. */
+function catalogRefFor(groupId: string, option: CatalogOption) {
+  return doc(col(groupId, 'storageCatalog'), option.source === 'group' ? option.key : normalizeText(option.name));
+}
+
+export interface ProductPatch {
+  name?: string;
+  aliases?: string[];
+  categories?: string[];
+  unit?: string | null;
+  priceUnit?: PriceUnit;
+  hidden?: boolean;
+}
+
+export async function updateProduct(groupId: string, option: CatalogOption, patch: ProductPatch): Promise<void> {
+  const ref = catalogRefFor(groupId, option);
+  if (option.source === 'group') {
+    await updateDoc(ref, { ...patch });
+    return;
+  }
+  // First edit of a built-in product: the group's own copy, tied to it.
+  await setDoc(ref, {
+    name: patch.name ?? option.name,
+    categories: patch.categories ?? option.categories,
+    unit: patch.unit !== undefined ? patch.unit : option.unit,
+    aliases: patch.aliases ?? option.aliases,
+    priceUnit: patch.priceUnit ?? option.priceUnit,
+    hidden: patch.hidden ?? false,
+    systemKey: option.productKey,
+    count: 0,
+    lastUsed: Date.now(),
+    unitIds: [],
+  });
+}
+
+/**
+ * Merges `from` into `into`: its names become aliases of `into`, its price
+ * history is refiled under `into`, and it's hidden (pointing at `into`) so
+ * any spelling of it now resolves there. Storage items keep their own names.
+ */
+export async function mergeProducts(groupId: string, from: CatalogOption, into: CatalogOption): Promise<void> {
+  const aliases = [...new Set([...into.aliases, from.name, ...from.altNames, ...from.aliases])].filter(
+    (n) => normalizeText(n) !== normalizeText(into.name),
+  );
+  await updateProduct(groupId, into, { aliases });
+  const fromRef = catalogRefFor(groupId, from);
+  if (from.source === 'group') {
+    await updateDoc(fromRef, { mergedInto: into.productKey, hidden: true });
+  } else {
+    await setDoc(fromRef, {
+      name: from.name,
+      categories: from.categories,
+      unit: from.unit,
+      count: 0,
+      lastUsed: Date.now(),
+      unitIds: [],
+      systemKey: from.productKey,
+      hidden: true,
+      mergedInto: into.productKey,
+    });
+  }
+  const snap = await getDocs(query(col(groupId, 'purchases'), where('productKey', '==', from.productKey)));
+  await inChunks(snap.docs, 400, (batch, chunk) => {
+    for (const d of chunk) batch.update(d.ref, { productKey: into.productKey });
+  });
 }

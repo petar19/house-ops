@@ -155,6 +155,11 @@ export interface ReceiptLineItem {
   name: string; // cleaned up by Gemini, reusing the group's own item names
   quantity: number | null;
   unit: string | null;
+  // Read since price tracking; absent on bills read before that.
+  price?: number | null;
+  brand?: string | null;
+  packAmount?: number | null;
+  packUnit?: string | null;
 }
 
 // groups/{groupId}/receiptTextRequests/{id} — a receipt pasted as text
@@ -166,6 +171,8 @@ export interface ReceiptTextRequest {
   requestedAt: number;
   text: string;
   items?: ReceiptLineItem[];
+  shop?: string | null; // read off the receipt
+  date?: string | null;
   error?: string;
 }
 
@@ -369,6 +376,16 @@ export interface StorageCatalogEntry {
   unitIds: string[]; // storage units it has been put in — ranks it higher there
   // Where it was last put away (never Unsorted) — the "usually goes" hint.
   lastPlace?: StoragePlacement | null;
+  // Products page edits. aliases: other spellings that mean this product.
+  // systemKey: the built-in product this one is the group's version of (so
+  // its price history stays under the built-in key). hidden: a built-in
+  // product the group doesn't want offered. mergedInto: merged into that
+  // product key — its names now resolve there.
+  aliases?: string[];
+  systemKey?: string | null;
+  priceUnit?: 'kg' | 'l' | 'pcs' | null;
+  hidden?: boolean;
+  mergedInto?: string | null;
 }
 
 // groups/{groupId}/storageCategories/{id} — a group's own categories on top
@@ -395,4 +412,28 @@ export interface StorageEvent {
   toCellId?: string;
   toPlace?: string;
   changes?: Record<string, { from: unknown; to: unknown }>;
+}
+
+// groups/{groupId}/purchases/{id} — one bought line: what, how much, for how
+// much, where and when. Kept apart from storage items (which get merged,
+// moved and used up) so a product's price history survives all of that.
+// Filed under the product's key, so every spelling of it lands together.
+export interface Purchase {
+  id: string;
+  productKey: string;
+  name: string; // as written / as Gemini cleaned it
+  raw: string | null; // the receipt line, when it came from one
+  quantity: number | null;
+  unit: string | null;
+  packAmount: number | null;
+  packUnit: string | null;
+  price: number | null; // paid for the whole line
+  unitPrice: number | null; // per priceUnit, worked out when recorded
+  priceUnit: 'kg' | 'l' | 'pcs' | null;
+  shop: string | null;
+  brand: string | null;
+  date: string; // yyyy-MM-dd
+  documentId: string | null; // the scanned bill it came from
+  createdAt: number;
+  createdBy: string;
 }

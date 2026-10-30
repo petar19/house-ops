@@ -52,6 +52,7 @@
     <h2 style="margin:0">{$t('storage.title')}</h2>
     {#if $myAccess.storage !== 'none'}
       <div class="row">
+        <a href="/storage/products" use:link class="button-link">🏷️ {$t('products.title')}</a>
         <a href="/storage/history" use:link class="button-link">🕘 {$t('storage.historyTitle')}</a>
         {#if $myAccess.storage === 'edit'}
           <a href="/storage/import" use:link class="button-link">📥 {$t('import.title')}</a>

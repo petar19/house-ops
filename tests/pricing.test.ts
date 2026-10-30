@@ -1,36 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { computePerItemPrice, computeTotalPrice } from '../src/lib/utils/pricing';
+import { unitPrice } from '../src/lib/storage/pricing';
 
-describe('computeTotalPrice', () => {
-  it('multiplies price per item by the item count', () => {
-    expect(computeTotalPrice(2.5, 3)).toBe(7.5);
+describe('unit prices', () => {
+  it('per kg from a weight', () => {
+    expect(unitPrice({ price: 5, quantity: 1, unit: 'kg' }, 'kg')).toBe(5);
+    expect(unitPrice({ price: 3, quantity: 500, unit: 'g' }, 'kg')).toBe(6);
   });
 
-  it('treats a missing/zero count as a single item', () => {
-    expect(computeTotalPrice(9.99, undefined)).toBe(9.99);
-    expect(computeTotalPrice(9.99, null)).toBe(9.99);
-    expect(computeTotalPrice(9.99, 0)).toBe(9.99);
+  it('per kg or l from a count of packages of a printed size', () => {
+    expect(unitPrice({ price: 3.98, quantity: 2, unit: 'pcs', packAmount: 500, packUnit: 'g' }, 'kg')).toBe(3.98);
+    expect(unitPrice({ price: 2.38, quantity: 2, unit: null, packAmount: 1, packUnit: 'l' }, 'l')).toBe(1.19);
   });
 
-  it('rounds to two decimal places', () => {
-    expect(computeTotalPrice(3.333, 3)).toBe(10);
-  });
-});
-
-describe('computePerItemPrice', () => {
-  it('divides the saved total back to a per-item figure for editing', () => {
-    expect(computePerItemPrice(7.5, 3)).toBe(2.5);
+  it('per piece from a count', () => {
+    expect(unitPrice({ price: 3, quantity: 10, unit: 'pcs' }, 'pcs')).toBe(0.3);
+    expect(unitPrice({ price: 2, quantity: null, unit: null }, 'pcs')).toBe(2);
   });
 
-  it('treats a missing/zero count as a single item', () => {
-    expect(computePerItemPrice(9.99, undefined)).toBe(9.99);
-    expect(computePerItemPrice(9.99, 0)).toBe(9.99);
+  it("gives up rather than guess when the units don't line up", () => {
+    expect(unitPrice({ price: 4, quantity: 2, unit: 'pcs' }, 'kg')).toBeNull();
+    expect(unitPrice({ price: null, quantity: 1, unit: 'kg' }, 'kg')).toBeNull();
+    expect(unitPrice({ price: 4, quantity: 1, unit: 'furlong' }, 'kg')).toBeNull();
   });
 
-  it('round-trips with computeTotalPrice for a clean multiple', () => {
-    const perItem = 4;
-    const count = 5;
-    const total = computeTotalPrice(perItem, count);
-    expect(computePerItemPrice(total, count)).toBe(perItem);
+  it('a freebie costs nothing per unit', () => {
+    expect(unitPrice({ price: 0, quantity: 1, unit: 'kg' }, 'kg')).toBe(0);
   });
 });

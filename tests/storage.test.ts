@@ -138,7 +138,8 @@ describe('storage autocomplete', () => {
     const merged = opts([groupEntry({ id: 'grasak', name: 'Grašak', categories: [], count: 5, unitIds: ['u1'] })], 'en');
     const peas = merged.filter((o) => o.name === 'Peas' || o.name === 'Grašak');
     expect(peas).toHaveLength(1);
-    expect(peas[0]).toMatchObject({ source: 'group', name: 'Grašak', categories: ['frozen'], altNames: ['Peas'] });
+    expect(peas[0]).toMatchObject({ source: 'group', name: 'Grašak', categories: ['frozen'], productKey: 'peas', builtIn: true });
+    expect(peas[0].altNames).toContain('Peas');
   });
 
   it('ranks what this group already keeps in this unit first', () => {

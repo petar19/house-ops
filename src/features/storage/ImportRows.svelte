@@ -11,11 +11,36 @@
     level: StorageLevel;
     raw: string | null; // the receipt line it came from, shown under the row
     categories: string[];
+    // For the price history (all optional): what the line cost in total,
+    // and — under ⋯ — brand, a shop other than the import's, pack size.
+    price: number | undefined;
+    brand: string;
+    shop: string;
+    packAmount: number | null;
+    packUnit: string | null;
+    showMore: boolean;
   }
 
   let nextId = 1;
   export function newRow(over: Partial<ImportRow> = {}): ImportRow {
-    return { id: nextId++, include: true, name: '', qtyMode: 'count', amount: 1, unit: '', level: 'some', raw: null, categories: [], ...over };
+    return {
+      id: nextId++,
+      include: true,
+      name: '',
+      qtyMode: 'count',
+      amount: 1,
+      unit: '',
+      level: 'some',
+      raw: null,
+      categories: [],
+      price: undefined,
+      brand: '',
+      shop: '',
+      packAmount: null,
+      packUnit: null,
+      showMore: false,
+      ...over,
+    };
   }
 </script>
 
@@ -58,11 +83,12 @@
     const text = e.clipboardData?.getData('text') ?? '';
     if (!/\n/.test(text.trim())) return; // one line: paste normally
     e.preventDefault();
-    const parsed = parseImportText(text).map((p) =>
-      p.level
-        ? newRow({ name: p.name, qtyMode: 'level', level: p.level })
-        : newRow({ name: p.name, amount: p.amount ?? 1, unit: p.unit ?? '' }),
-    );
+    const parsed = parseImportText(text).map((p) => {
+      const extra = { price: p.price ?? undefined, shop: p.shop ?? '', brand: p.brand ?? '' };
+      return p.level
+        ? newRow({ name: p.name, qtyMode: 'level', level: p.level, ...extra })
+        : newRow({ name: p.name, amount: p.amount ?? 1, unit: p.unit ?? '', ...extra });
+    });
     // Replace this row if it was still empty, otherwise insert after it.
     const keep = rows[index].name.trim() ? 1 : 0;
     rows = [...rows.slice(0, index + keep), ...parsed, ...rows.slice(index + 1)];
@@ -95,8 +121,32 @@
           onPick={(o) => pick(row, o)}
         />
         <QtyFields bind:qtyMode={row.qtyMode} bind:amount={row.amount} bind:unit={row.unit} bind:level={row.level} />
+        <input
+          class="price"
+          type="number"
+          min="0"
+          step="0.01"
+          bind:value={row.price}
+          placeholder="€"
+          aria-label={$t('import.price')}
+          title={$t('import.price')}
+        />
+        <button
+          type="button"
+          class="more"
+          class:on={row.showMore || row.brand || row.shop}
+          onclick={() => (row.showMore = !row.showMore)}
+          aria-label={$t('import.moreDetails')}
+          title={$t('import.moreDetails')}
+        >⋯</button>
         <button type="button" class="remove" onclick={() => remove(i)} aria-label={$t('common.remove')}>✕</button>
       </div>
+      {#if row.showMore}
+        <div class="row details">
+          <input bind:value={row.brand} placeholder={$t('import.brand')} aria-label={$t('import.brand')} />
+          <input bind:value={row.shop} placeholder={$t('import.rowShop')} aria-label={$t('import.rowShop')} />
+        </div>
+      {/if}
       {#if row.raw}<span class="muted raw">{$t('import.fromLine', { line: row.raw })}</span>{/if}
     </div>
   {/each}
@@ -120,8 +170,25 @@
     padding-left: 0.25rem;
     font-size: 0.82em;
   }
-  .remove {
+  .remove,
+  .more {
     padding: 0.45em 0.6em;
+  }
+  .more.on {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .price {
+    width: 5.5em !important;
+    flex: 0 0 auto;
+  }
+  .details {
+    flex-wrap: nowrap;
+    padding-left: 0.25rem;
+  }
+  .details input {
+    flex: 1 1 8rem;
+    width: auto;
   }
   @media (max-width: 520px) {
     .line {

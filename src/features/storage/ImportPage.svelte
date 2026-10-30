@@ -7,6 +7,7 @@
   import {
     importToUnsorted,
     markReceiptImported,
+    recordPurchases,
     requestReceiptItems,
     requestReceiptText,
     storageUnits,
@@ -14,7 +15,8 @@
   } from '../../lib/stores/storage';
   import { makePlaceOf } from '../../lib/storage/layout';
   import { matchQuality } from '../../lib/storage/suggest';
-  import type { DocumentRecord, DocumentVendor, ReceiptItemRequest, ReceiptTextRequest } from '../../lib/types';
+  import { toIso } from '../../lib/utils/date';
+  import type { DocumentRecord, DocumentVendor, ReceiptItemRequest, ReceiptLineItem, ReceiptTextRequest } from '../../lib/types';
   import ImportRows, { newRow, type ImportRow } from './ImportRows.svelte';
 
   // Collect a whole shopping trip into Unsorted in one go — typed/pasted, a
@@ -30,6 +32,24 @@
   // Bills come from the Documents tab (photo saving with OCR on).
   let canUseBills = $derived($myAccess.photoSaving !== 'none');
   let ready = $derived(rows.filter((r) => r.include && r.name.trim()));
+
+  // Where and when it was bought — for the price history. Filled in from a
+  // bill or a pasted receipt; a row's own shop (under ⋯) wins over this.
+  let importShop = $state('');
+  let importDate = $state(toIso(new Date()));
+
+  function rowFromLine(li: ReceiptLineItem): ImportRow {
+    return newRow({
+      name: li.name,
+      amount: li.quantity ?? 1,
+      unit: li.unit ?? '',
+      raw: li.raw,
+      price: li.price ?? undefined,
+      brand: li.brand ?? '',
+      packAmount: li.packAmount ?? null,
+      packUnit: li.packUnit ?? null,
+    });
+  }
 
   function toDrafts(list: ImportRow[], billNote: string): ImportDraft[] {
     return list.map((r) => ({
@@ -52,6 +72,22 @@
       const billNote = selectedBill ? `${selectedBill.vendor}${selectedBill.date ? ' ' + selectedBill.date : ''}: ` : '';
       // Pasted receipts have no shop/date on hand — the raw line is note enough.
       const { unitId } = await importToUnsorted(groupId, $t('import.unsortedName'), toDrafts(ready, billNote), makePlaceOf($storageUnits, $t));
+      await recordPurchases(
+        groupId,
+        ready.map((r) => ({
+          name: r.name.trim(),
+          raw: r.raw,
+          quantity: r.qtyMode === 'count' ? (r.amount ?? 1) : null,
+          unit: r.qtyMode === 'count' ? r.unit.trim() || null : null,
+          packAmount: r.packAmount,
+          packUnit: r.packUnit,
+          price: r.price === undefined || r.price === null || Number.isNaN(r.price) ? null : r.price,
+          shop: r.shop.trim() || importShop.trim() || null,
+          brand: r.brand.trim() || null,
+          date: importDate || toIso(new Date()),
+          documentId: selectedBill?.id ?? null,
+        })),
+      );
       if (selectedBill) {
         await markReceiptImported(groupId, selectedBill.id, requests.get(selectedBill.id)?.status ?? 'done');
       }
@@ -136,9 +172,9 @@
   });
 
   function rowsFromBill(bill: DocumentRecord): ImportRow[] {
-    return (bill.lineItems ?? []).map((li) =>
-      newRow({ name: li.name, amount: li.quantity ?? 1, unit: li.unit ?? '', raw: li.raw }),
-    );
+    importShop = bill.vendor;
+    if (bill.date) importDate = bill.date;
+    return (bill.lineItems ?? []).map(rowFromLine);
   }
 
   async function chooseBill(bill: DocumentRecord) {
@@ -182,6 +218,8 @@
     error = '';
     pasteRequestId = null;
     pasteRequest = null;
+    importShop = '';
+    importDate = toIso(new Date());
   }
 
   // ── Pasted receipt text ──
@@ -215,7 +253,9 @@
       if (!req) return;
       pasteRequest = req;
       if (req.status === 'done') {
-        rows = (req.items ?? []).map((li) => newRow({ name: li.name, amount: li.quantity ?? 1, unit: li.unit ?? '', raw: li.raw }));
+        rows = (req.items ?? []).map(rowFromLine);
+        if (req.shop) importShop = req.shop;
+        if (req.date) importDate = req.date;
         pasteSince = null;
       }
     });
@@ -321,6 +361,16 @@
     {/if}
 
     {#if rows.length > 0}
+      <div class="row where-when">
+        <label class="stack field">
+          <span class="muted">{$t('import.shop')}</span>
+          <input bind:value={importShop} placeholder={$t('import.shopPlaceholder')} />
+        </label>
+        <label class="stack field">
+          <span class="muted">{$t('import.date')}</span>
+          <input type="date" bind:value={importDate} />
+        </label>
+      </div>
       <div class="row">
         <button class="primary" onclick={addAll} disabled={busy || ready.length === 0}>
           📥 {$t('import.addToUnsorted', { count: ready.length })}
@@ -332,6 +382,10 @@
 </div>
 
 <style>
+  .where-when .field {
+    flex: 1 1 10rem;
+    gap: 0.2rem;
+  }
   .bill {
     display: flex;
     flex-direction: column;

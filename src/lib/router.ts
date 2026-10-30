@@ -11,6 +11,8 @@ import Storage from '../features/storage/Storage.svelte';
 import StorageUnit from '../features/storage/StorageUnit.svelte';
 import StorageHistoryPage from '../features/storage/StorageHistoryPage.svelte';
 import ImportPage from '../features/storage/ImportPage.svelte';
+import ProductsPage from '../features/storage/ProductsPage.svelte';
+import ProductPage from '../features/storage/ProductPage.svelte';
 
 export const routes = {
   '/': ExpenseList,
@@ -20,6 +22,8 @@ export const routes = {
   '/storage': Storage,
   '/storage/history': StorageHistoryPage,
   '/storage/import': ImportPage,
+  '/storage/products': ProductsPage,
+  '/storage/products/:key': ProductPage,
   '/storage/:unitId': StorageUnit,
   '/reminders': Reminders,
   '/stats': Stats,

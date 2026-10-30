@@ -273,6 +273,17 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
+      // What was bought for how much — price history per product. Storage
+      // editors record them on import/add and can fix or remove them.
+      match /purchases/{purchaseId} {
+        allow read: if canView(groupId, 'storage');
+        allow create: if canEdit(groupId, 'storage')
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.productKey is string
+          && request.resource.data.date is string;
+        allow update, delete: if canEdit(groupId, 'storage');
+      }
+
       // Append-only history of item adds/moves/edits/removals: an editor can
       // only add entries in their own name, and nobody can rewrite or delete
       // one afterwards.

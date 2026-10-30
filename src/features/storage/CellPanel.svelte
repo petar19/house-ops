@@ -9,6 +9,7 @@
     loadItemHistory,
     moveItems,
     placeUnit,
+    recordPurchases,
     removeItems,
     storageCatalog,
     storageItems,
@@ -37,6 +38,7 @@
   } from '../../lib/storage/layout';
   import { describeEvent } from '../../lib/storage/history';
   import { normalizeText } from '../../lib/utils/normalize';
+  import { toIso } from '../../lib/utils/date';
   import type { CatalogOption } from '../../lib/storage/suggest';
   import type { StorageEvent, StorageItem, StorageLevel, StorageUnit } from '../../lib/types';
   import ItemNameInput from './ItemNameInput.svelte';
@@ -209,6 +211,8 @@
   let addAmount = $state<number | undefined>(1);
   let addUnit = $state('');
   let addLevel = $state<StorageLevel>('some');
+  // Optional: what it cost — recorded as a purchase today for the price history.
+  let addPrice = $state<number | undefined>(undefined);
 
   function onAddPick(option: CatalogOption) {
     addPicked = option;
@@ -234,8 +238,27 @@
     }
     const draft: ItemDraft = { name, ...draftFrom(addMode, addAmount, addUnit, addLevel), expiry: null, note: '' };
     const categories = categoriesFor(name, addPicked);
+    const price = addPrice === undefined || addPrice === null || Number.isNaN(addPrice) ? null : addPrice;
     run(async () => {
       await addItem(groupId, unit.id, cellId, draft, categories, placeOf);
+      if (price !== null) {
+        await recordPurchases(groupId, [
+          {
+            name,
+            raw: null,
+            quantity: draft.amount,
+            unit: draft.unit,
+            packAmount: null,
+            packUnit: null,
+            price,
+            shop: null,
+            brand: null,
+            date: toIso(new Date()),
+            documentId: null,
+          },
+        ]);
+      }
+      addPrice = undefined;
       addName = '';
       addPicked = null;
       addAmount = 1;
@@ -487,6 +510,16 @@
         onPick={onAddPick}
       />
       <QtyFields bind:qtyMode={addMode} bind:amount={addAmount} bind:unit={addUnit} bind:level={addLevel} />
+      <input
+        class="add-price"
+        type="number"
+        min="0"
+        step="0.01"
+        bind:value={addPrice}
+        placeholder="€"
+        title={$t('import.price')}
+        aria-label={$t('import.price')}
+      />
       <button class="primary" type="submit" disabled={busy || !addName.trim()}>{$t('common.add')}</button>
     </form>
     {#if !looseOnly}
@@ -688,6 +721,10 @@
   }
   .facts dd {
     margin: 0;
+  }
+  .add-price {
+    width: 5.5em !important;
+    flex: 0 0 auto;
   }
   .details {
     display: grid;

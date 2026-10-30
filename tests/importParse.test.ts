@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { combineDrafts, parseImportLine, parseImportText, type ImportDraft } from '../src/lib/storage/importParse';
+import { combineDrafts, parseHeader, parseImportLine, parseImportText, type ImportDraft } from '../src/lib/storage/importParse';
 
 const c = (name: string, amount: number | null, unit: string | null) => ({ name, amount, unit, level: null });
 
@@ -62,5 +62,35 @@ describe('combining an import list', () => {
       ['Jogurt', 3, 'pcs', 'ZDR.JOG; JOG.NAT'],
       ['Jogurt', 1, 'kg', ''],
     ]);
+  });
+});
+
+describe('prices and column headers', () => {
+  it('reads the default order item, quantity, unit, price', () => {
+    expect(parseImportLine('chicken breast, 1, kg, 5')).toMatchObject({ name: 'chicken breast', amount: 1, unit: 'kg', price: 5 });
+    expect(parseImportLine('peas, 2, bag, 3,49')).toMatchObject({ name: 'peas', amount: 2, unit: 'bag', price: 3.49 });
+    expect(parseImportLine('eggs, 10, 2.99')).toMatchObject({ name: 'eggs', amount: 10, unit: null, price: 2.99 });
+    expect(parseImportLine('peas, 2, bag')).not.toHaveProperty('price');
+  });
+
+  it('recognises a header line in short or long form', () => {
+    expect(parseHeader('i, q, u, p, s, b')).toEqual(['item', 'quantity', 'unit', 'price', 'shop', 'brand']);
+    expect(parseHeader('Item; Price; Shop')).toEqual(['item', 'price', 'shop']);
+    expect(parseHeader('stvar, kolicina, cijena')).toEqual(['item', 'quantity', 'price']);
+    expect(parseHeader('q, u')).toBeNull(); // no item column
+    expect(parseHeader('peas, 2, bag')).toBeNull();
+  });
+
+  it('reads every line in the header order, with any subset of columns', () => {
+    const rows = parseImportText('i, p, q, u, s, b\nchicken breast, 5, 1, kg, metro, vindija\nfree sample, 0, 1\n\nflour, , some');
+    expect(rows).toEqual([
+      { name: 'chicken breast', amount: 1, unit: 'kg', level: null, price: 5, shop: 'metro', brand: 'vindija' },
+      { name: 'free sample', amount: 1, unit: null, level: null, price: 0, shop: null, brand: null },
+      { name: 'flour', amount: null, unit: null, level: 'some', price: null, shop: null, brand: null },
+    ]);
+  });
+
+  it('without a header, lines are read one by one as before', () => {
+    expect(parseImportText('Milk 1 l\nflour, some').map((r) => r.name)).toEqual(['Milk', 'flour']);
   });
 });
