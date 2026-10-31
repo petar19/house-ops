@@ -10,6 +10,32 @@ export interface ExpenseFilters {
   search?: string; // matched against name + description
 }
 
+// Money out vs money in over a set of expenses: a positive price is spending,
+// a negative one (a refund, money received) is income. `net` is what was
+// actually spent after what came back.
+export interface FlowTotals {
+  out: number;
+  in: number;
+  net: number;
+  outCount: number;
+  inCount: number;
+}
+
+export function flowTotals(expenses: Expense[]): FlowTotals {
+  const totals: FlowTotals = { out: 0, in: 0, net: 0, outCount: 0, inCount: 0 };
+  for (const e of expenses) {
+    if (e.price > 0) {
+      totals.out += e.price;
+      totals.outCount++;
+    } else if (e.price < 0) {
+      totals.in -= e.price;
+      totals.inCount++;
+    }
+  }
+  totals.net = totals.out - totals.in;
+  return totals;
+}
+
 // `date` is day-granularity, so sorting by it alone leaves same-day expenses
 // in an arbitrary tiebreak order — a freshly-added expense could land
 // anywhere among today's entries instead of at the top. createdAt (a real
