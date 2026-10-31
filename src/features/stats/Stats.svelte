@@ -8,12 +8,17 @@
   import { locale, t } from '../../lib/i18n';
   import ChartView from '../../lib/components/ChartView.svelte';
   import MonthPicker from '../../lib/components/MonthPicker.svelte';
+  import { catalogOptions, loadAllPurchases, storageCategories } from '../../lib/stores/storage';
+  import { purchaseStats } from '../../lib/storage/purchaseStats';
+  import { SYSTEM_CATEGORIES } from '../../lib/storage/systemCatalog';
+  import type { Purchase } from '../../lib/types';
   import {
     aggregateByCategory,
     aggregateByName,
     aggregateBySpender,
     aggregateByTime,
     filterExpenses,
+    flowTotals,
     sortExpenses,
     suggestBucketSize,
     type BucketSize,
@@ -51,6 +56,42 @@
   );
   let sorted = $derived(sortExpenses(filtered, sortKey));
   let total = $derived(filtered.reduce((sum, e) => sum + e.price, 0));
+  let flow = $derived(flowTotals(filtered));
+
+  // Shopping, from the purchases recorded with storage imports (prices per
+  // line) — loaded once per visit, only for members who can see storage.
+  let purchases = $state<Purchase[] | null>(null);
+  let seesPurchases = $derived(!!$activeGroup?.capabilities.storage && $myAccess.storage !== 'none');
+  $effect(() => {
+    const gid = $activeGroup?.id;
+    if (!gid || !seesPurchases) return;
+    loadAllPurchases(gid)
+      .then((p) => (purchases = p))
+      .catch(() => (purchases = []));
+  });
+  let shopping = $derived(purchases ? purchaseStats(purchases, $catalogOptions, { from: from || undefined, to: to || undefined }) : null);
+  function storageCategoryName(id: string): string {
+    if (id === 'other') return $t('stats.otherCategory');
+    const c = SYSTEM_CATEGORIES.find((x) => x.id === id);
+    return c ? ($locale === 'hr' ? c.hr : c.en) : ($storageCategories.find((x) => x.id === id)?.name ?? id);
+  }
+  const PALETTE = ['#4f46e5', '#16a34a', '#dc2626', '#d97706', '#0891b2', '#9333ea', '#db2777', '#65a30d'];
+  let shopChartConfig = $derived.by(() => {
+    if (!shopping || shopping.byMonth.length === 0) return null;
+    const shops = shopping.byShop.map((r) => r.key);
+    return {
+      type: 'bar' as const,
+      data: {
+        labels: shopping.byMonth.map((m) => m.month),
+        datasets: shops.map((shop, i) => ({
+          label: shop,
+          data: shopping!.byMonth.map((m) => m.shops[shop] ?? 0),
+          backgroundColor: PALETTE[i % PALETTE.length],
+        })),
+      },
+      options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true } } },
+    };
+  });
 
   let effectiveBucket = $derived(bucket === 'auto' ? suggestBucketSize(filtered) : bucket);
   let timeAgg = $derived(aggregateByTime(filtered, effectiveBucket));
@@ -173,9 +214,17 @@
       {/if}
     </div>
 
-    <div class="card row" style="justify-content: space-between">
-      <strong>{$t('stats.expenseCount', { count: filtered.length })}</strong>
-      <strong>{currency.format(total)}</strong>
+    <div class="card stack">
+      <div class="row" style="justify-content: space-between">
+        <strong>{$t('stats.expenseCount', { count: filtered.length })}</strong>
+        <strong>{currency.format(total)}</strong>
+      </div>
+      {#if flow.inCount > 0}
+        <div class="row muted" style="justify-content: space-between">
+          <span>{$t('expenseList.out', { count: flow.outCount })} {currency.format(flow.out)}</span>
+          <span>{$t('expenseList.in', { count: flow.inCount })} <span style="color: var(--success)">{currency.format(flow.in)}</span></span>
+        </div>
+      {/if}
     </div>
 
     {#if timeAgg.length > 0}
@@ -189,6 +238,40 @@
       <div class="card">
         <h3>{$t('stats.byCategory')}</h3>
         <ChartView config={categoryChartConfig} />
+      </div>
+    {/if}
+
+    {#if shopping && shopping.total > 0}
+      <div class="card stack">
+        <div class="row" style="justify-content: space-between">
+          <h3 style="margin:0">🛒 {$t('stats.shoppingTitle')}</h3>
+          <strong>{currency.format(shopping.total)}</strong>
+        </div>
+        <p class="muted" style="margin:0">{$t('stats.shoppingHint')}</p>
+        {#if shopChartConfig && shopping.byMonth.length > 1}<ChartView config={shopChartConfig} />{/if}
+        <h4 style="margin:0">{$t('stats.byShop')}</h4>
+        {#each shopping.byShop as r (r.key)}
+          <div class="row" style="justify-content: space-between">
+            <span>{r.key}</span>
+            <span>{currency.format(r.total)} <span class="muted">({r.count})</span></span>
+          </div>
+        {/each}
+        <h4 style="margin:0">{$t('stats.byProductCategory')}</h4>
+        {#each shopping.byCategory as r (r.key)}
+          <div class="row" style="justify-content: space-between">
+            <span>{storageCategoryName(r.key)}</span>
+            <span>{currency.format(r.total)} <span class="muted">({r.count})</span></span>
+          </div>
+        {/each}
+        <details>
+          <summary class="muted">{$t('stats.topProducts')}</summary>
+          {#each shopping.byProduct.slice(0, 20) as r (r.key)}
+            <div class="row" style="justify-content: space-between">
+              <span>{r.key}</span>
+              <span>{currency.format(r.total)} <span class="muted">({r.count})</span></span>
+            </div>
+          {/each}
+        </details>
       </div>
     {/if}
 
