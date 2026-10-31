@@ -189,7 +189,9 @@ export interface ReceiptTextRequest {
   status: 'pending' | 'done' | 'error';
   requestedBy: string;
   requestedAt: number;
-  text: string;
+  text: string; // empty for a photo
+  image?: string; // a photo instead (base64 JPEG), deleted once read
+  mimeType?: string;
   items?: ReceiptLineItem[];
   shop?: string | null; // read off the receipt
   date?: string | null;

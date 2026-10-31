@@ -625,6 +625,19 @@ export async function requestReceiptText(groupId: string, text: string): Promise
   return ref.id;
 }
 
+/** Files a photo (a receipt, or the shopping itself) to be read the same way; returns the request id. */
+export async function requestReceiptPhoto(groupId: string, base64: string): Promise<string> {
+  const ref = await addDoc(col(groupId, 'receiptTextRequests'), {
+    status: 'pending',
+    requestedBy: uid(),
+    requestedAt: Date.now(),
+    text: '',
+    image: base64,
+    mimeType: 'image/jpeg',
+  });
+  return ref.id;
+}
+
 // ── Purchases (price history) ─────────────────────────────────────────────
 
 export type PurchaseDraft = Omit<Purchase, 'id' | 'createdAt' | 'createdBy' | 'unitPrice' | 'priceUnit' | 'productKey'>;

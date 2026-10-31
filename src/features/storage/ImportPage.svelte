@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { shrinkPhoto } from '../../lib/utils/image';
   import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
   import { link, push } from 'svelte-spa-router';
   import { db } from '../../lib/firebase';
@@ -9,6 +10,7 @@
     markReceiptImported,
     recordPurchases,
     requestReceiptItems,
+    requestReceiptPhoto,
     requestReceiptText,
     storageUnits,
     type ImportDraft,
@@ -22,7 +24,7 @@
   // Collect a whole shopping trip into Unsorted in one go — typed/pasted, a
   // receipt pasted as text, or read off a scanned bill — then put things
   // away from there whenever.
-  let mode = $state<'list' | 'paste' | 'bill'>('list');
+  let mode = $state<'list' | 'paste' | 'photo' | 'bill'>('list');
   let rows = $state<ImportRow[]>([newRow()]);
   let busy = $state(false);
   let error = $state('');
@@ -211,13 +213,14 @@
     if (selectedBill) void chooseBill({ ...selectedBill, lineItems: undefined });
   }
 
-  function switchMode(m: 'list' | 'paste' | 'bill') {
+  function switchMode(m: 'list' | 'paste' | 'photo' | 'bill') {
     mode = m;
     selectedBill = null;
     rows = m === 'list' ? [newRow()] : [];
     error = '';
     pasteRequestId = null;
     pasteRequest = null;
+    photoPreview = '';
     importShop = '';
     importDate = toIso(new Date());
   }
@@ -265,6 +268,25 @@
     };
   });
 
+  // ── Photo ── a receipt, or the shopping itself on the table: shrunk on
+  // the phone, then read like a pasted receipt (same request, same answer).
+  let photoPreview = $state('');
+  async function readPhoto(e: Event) {
+    const file = (e.currentTarget as HTMLInputElement).files?.[0];
+    if (!file || !groupId) return;
+    error = '';
+    rows = [];
+    pasteRequest = null;
+    try {
+      const { base64, dataUrl } = await shrinkPhoto(file);
+      photoPreview = dataUrl;
+      pasteRequestId = await requestReceiptPhoto(groupId, base64);
+      pasteSince = Date.now();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
   let pasteSlow = $derived(!!pasteSince && pasteRequest?.status !== 'done' && now - pasteSince > 45_000);
 </script>
 
@@ -279,6 +301,7 @@
     <div class="tabs row">
       <button class:primary={mode === 'list'} onclick={() => switchMode('list')}>✍️ {$t('import.typeList')}</button>
       <button class:primary={mode === 'paste'} onclick={() => switchMode('paste')}>📋 {$t('import.pasteReceipt')}</button>
+      <button class:primary={mode === 'photo'} onclick={() => switchMode('photo')}>📷 {$t('import.photo')}</button>
       <button class:primary={mode === 'bill'} onclick={() => switchMode('bill')}>🧾 {$t('import.fromBill')}</button>
     </div>
 
@@ -300,6 +323,24 @@
           <p class="muted" style="color: var(--danger); margin:0">{$t('import.readFailed', { error: pasteRequest.error ?? '' })}</p>
         {:else if pasteRequestId && pasteRequest?.status !== 'done'}
           <p class="muted" style="margin:0">⏳ {$t('import.readingText')}</p>
+          {#if pasteSlow}<p class="muted" style="margin:0">{$t('import.readingSlow')}</p>{/if}
+        {:else if pasteRequest?.status === 'done'}
+          <p class="muted" style="margin:0">{$t('import.billHint', { count: rows.length })}</p>
+          <ImportRows bind:rows showInclude />
+        {/if}
+      </div>
+    {:else if mode === 'photo'}
+      <div class="card stack">
+        <p class="muted" style="margin:0">{$t('import.photoHint')}</p>
+        <label class="button-like">
+          📷 {photoPreview ? $t('import.photoAnother') : $t('import.photoTake')}
+          <input type="file" accept="image/*" capture="environment" onchange={readPhoto} hidden />
+        </label>
+        {#if photoPreview}<img src={photoPreview} alt="" class="preview" />{/if}
+        {#if pasteRequestId && pasteRequest?.status === 'error'}
+          <p class="muted" style="color: var(--danger); margin:0">{$t('import.readFailed', { error: pasteRequest.error ?? '' })}</p>
+        {:else if pasteRequestId && pasteRequest?.status !== 'done'}
+          <p class="muted" style="margin:0">⏳ {$t('import.readingPhoto')}</p>
           {#if pasteSlow}<p class="muted" style="margin:0">{$t('import.readingSlow')}</p>{/if}
         {:else if pasteRequest?.status === 'done'}
           <p class="muted" style="margin:0">{$t('import.billHint', { count: rows.length })}</p>
@@ -399,5 +440,21 @@
   }
   .bill:last-child {
     border-bottom: none;
+  }
+  .button-like {
+    display: inline-block;
+    align-self: flex-start;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 0.55em 1em;
+    cursor: pointer;
+    color: var(--accent);
+  }
+  .preview {
+    max-width: 100%;
+    max-height: 14rem;
+    object-fit: contain;
+    align-self: flex-start;
+    border-radius: 8px;
   }
 </style>
