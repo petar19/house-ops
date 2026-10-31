@@ -132,6 +132,22 @@ export interface PhotoSavingConfig {
   ocrInstruction?: string;
 }
 
+// storageAlerts/{groupId} — doc id is the app group's own id, same pattern
+// as WhatsAppIntegration. Expiry alerts for the group's storage: once a day
+// at `time`, the bot posts in the chosen WhatsApp chat (it can be the
+// expenses chat) everything that expires exactly daysBefore days from today
+// — 0 meaning today. Managed by the group's admin; lastSentDate and
+// lastTestAt are the bot's own bookkeeping.
+export interface StorageAlertConfig {
+  enabled: boolean;
+  whatsappGroupJid: string | null;
+  daysBefore: number[];
+  time: string; // HH:MM, local time
+  lastSentDate?: string | null;
+  testRequestedAt?: number | null; // "send one now" from Settings
+  lastTestAt?: number | null;
+}
+
 // groups/{groupId}/documents/{id} — a summary of one OCR'd receipt/bill,
 // written by the OCR watcher (Admin SDK, bypasses rules). Includes the full
 // OCR text — cheap to store (Firestore bills per-write, not per-byte) and

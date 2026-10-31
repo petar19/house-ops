@@ -76,6 +76,14 @@ service cloud.firestore {
       }
     }
 
+    // Doc id is the app group's own id — storage expiry alerts (which chat,
+    // when, how many days ahead). Set by the group's admin; the bot reads it
+    // live and keeps its own lastSentDate on it via the Admin SDK.
+    match /storageAlerts/{groupId} {
+      allow read, write: if isAllowed()
+        && get(/databases/$(database)/documents/groups/$(groupId)).data.members[request.auth.uid].role == 'admin';
+    }
+
     // Doc id is the app group's own id, same pattern as whatsappIntegrations
     // above — a group's "Photo saving" capability config. Exposes a raw
     // filesystem path on the bot's machine, so site-admin only rather than

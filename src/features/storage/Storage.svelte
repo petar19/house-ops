@@ -10,6 +10,7 @@
   import UnitEditor from './UnitEditor.svelte';
   import type { StorageUnitKind } from '../../lib/types';
   import UnitCard from './UnitCard.svelte';
+  import UseSoon from './UseSoon.svelte';
 
   let q = $state('');
   let creating = $state<StorageUnitKind | null>(null);
@@ -78,6 +79,8 @@
         <span>{$t('inbox.banner', { count: unsortedCount })} ›</span>
       </a>
     {/if}
+
+    {#if !q.trim()}<UseSoon />{/if}
 
     {#if q.trim()}
       <div class="card stack">

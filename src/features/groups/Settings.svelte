@@ -24,6 +24,7 @@
   import UnmappedPayers from './UnmappedPayers.svelte';
   import WhatsAppBridge from './WhatsAppBridge.svelte';
   import PhotoSavingSettings from './PhotoSavingSettings.svelte';
+  import StorageAlertSettings from './StorageAlertSettings.svelte';
 
   let group = $derived($activeGroup);
   let isAdmin = $derived(
@@ -285,6 +286,10 @@
 
       {#if group.capabilities.photoSaving}
         <PhotoSavingSettings {group} />
+      {/if}
+
+      {#if group.capabilities.storage}
+        <StorageAlertSettings {group} />
       {/if}
 
       <button class="danger" onclick={handleDelete}>{$t('groupDetail.deleteGroup')}</button>
