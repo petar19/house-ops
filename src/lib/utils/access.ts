@@ -37,7 +37,7 @@ export function evenShares(group: Pick<Group, 'members'>): Record<string, number
 
 /** The route to land on when the default (expenses) one isn't available. */
 export function firstAvailableRoute(access: Record<GroupFeature, AccessLevel>): string {
-  if (access.expenses !== 'none') return '/';
+  if (access.expenses !== 'none') return '/expenses';
   if (access.storage !== 'none') return '/storage';
   if (access.shoppingList !== 'none') return '/shopping';
   if (access.photoSaving !== 'none') return '/documents';

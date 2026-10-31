@@ -31,7 +31,7 @@
     <GroupSwitcher />
     <nav>
       {#if $myAccess.expenses !== 'none'}
-        <a href="/" use:link use:active>{$t('nav.expenses')}</a>
+        <a href="/expenses" use:link use:active>{$t('nav.expenses')}</a>
         <a href="/stats" use:link use:active>{$t('nav.stats')}</a>
         <a href="/settleup" use:link use:active>{$t('nav.settleUp')}</a>
       {/if}

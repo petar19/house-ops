@@ -1,3 +1,4 @@
+import Home from '../features/home/Home.svelte';
 import ExpenseList from '../features/expenses/ExpenseList.svelte';
 import Settings from '../features/groups/Settings.svelte';
 import Stats from '../features/stats/Stats.svelte';
@@ -15,7 +16,8 @@ import ProductsPage from '../features/storage/ProductsPage.svelte';
 import ProductPage from '../features/storage/ProductPage.svelte';
 
 export const routes = {
-  '/': ExpenseList,
+  '/': Home,
+  '/expenses': ExpenseList,
   '/settings': Settings,
   '/documents': Documents,
   '/shopping': ShoppingList,

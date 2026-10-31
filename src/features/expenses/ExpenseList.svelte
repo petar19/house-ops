@@ -19,9 +19,8 @@
   import ReceiptView from '../documents/ReceiptView.svelte';
   import type { Expense } from '../../lib/types';
 
-  // This is also the start page — someone who can't see expenses here (the
-  // group doesn't use them, or an admin hid them from this member) lands on
-  // the first tab they can use instead.
+  // Someone who can't see expenses here (the group doesn't use them, or an
+  // admin hid them from this member) lands on the first tab they can use.
   $effect(() => {
     if ($activeGroup && $myAccess.expenses === 'none') replace(firstAvailableRoute($myAccess));
   });

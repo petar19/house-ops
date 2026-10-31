@@ -65,7 +65,7 @@ describe('group access', () => {
 
   it('sends someone without expenses to the first tab they can use', () => {
     expect(firstAvailableRoute({ expenses: 'none', photoSaving: 'none', shoppingList: 'none', storage: 'view' })).toBe('/storage');
-    expect(firstAvailableRoute({ expenses: 'view', photoSaving: 'none', shoppingList: 'none', storage: 'none' })).toBe('/');
+    expect(firstAvailableRoute({ expenses: 'view', photoSaving: 'none', shoppingList: 'none', storage: 'none' })).toBe('/expenses');
     expect(firstAvailableRoute({ expenses: 'none', photoSaving: 'none', shoppingList: 'none', storage: 'none' })).toBe('/reminders');
   });
 });
