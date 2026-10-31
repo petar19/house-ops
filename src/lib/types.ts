@@ -60,6 +60,10 @@ export interface Expense {
   date: string; // ISO date (yyyy-MM-dd)
   location: ExpenseLocation | null;
   subitems: Subitem[];
+  // The scanned bill this was paid with (groups/{groupId}/documents/{id}),
+  // so the receipt — and the products on it — open from the expense.
+  documentId?: string | null;
+  documentLabel?: string | null; // "Lidl · 2026-10-30", shown without fetching the bill
   createdBy: string;
   createdAt: number;
   source: 'manual' | 'migrated' | 'whatsapp-bot';

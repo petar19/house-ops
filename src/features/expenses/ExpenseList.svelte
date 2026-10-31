@@ -15,6 +15,8 @@
   import { locale, t } from '../../lib/i18n';
   import MonthPicker from '../../lib/components/MonthPicker.svelte';
   import ExpenseForm from './ExpenseForm.svelte';
+  import Modal from '../../lib/components/Modal.svelte';
+  import ReceiptView from '../documents/ReceiptView.svelte';
   import type { Expense } from '../../lib/types';
 
   // This is also the start page — someone who can't see expenses here (the
@@ -70,6 +72,9 @@
 
   let shown = $derived(filterExpenses($expenses, { from: from || undefined, to: to || undefined }));
   let totals = $derived(flowTotals(shown));
+
+  let receiptOf = $state<Expense | null>(null);
+  let seesBills = $derived(!!$activeGroup?.capabilities.photoSaving && $myAccess.photoSaving !== 'none');
 
   let currency = $derived(
     new Intl.NumberFormat($locale === 'hr' ? 'hr-HR' : 'en-US', { style: 'currency', currency: 'EUR' }),
@@ -152,6 +157,9 @@
                 {#if expense.subitems.length > 0}<span>· {$t('expenseList.subitems', { count: expense.subitems.length })}</span>{/if}
                 {#if expense.location}<span>· {$t('expenseList.location')}</span>{/if}
                 {#if expense.source === 'migrated'}<span>· {$t('expenseList.migrated')}</span>{/if}
+                {#if expense.documentId && seesBills}
+                  <button class="receipt" onclick={() => (receiptOf = expense)}>🧾 {expense.documentLabel ?? $t('receipt.title')}</button>
+                {/if}
               </div>
               {#if expense.categories.length > 0}
                 <div class="row">
@@ -174,7 +182,19 @@
   {/if}
 </div>
 
+{#if receiptOf?.documentId && $activeGroup}
+  <Modal open={true} onClose={() => (receiptOf = null)} title={$t('receipt.title')}>
+    {#snippet children()}
+      <ReceiptView groupId={$activeGroup!.id} documentId={receiptOf!.documentId!} />
+    {/snippet}
+  </Modal>
+{/if}
+
 <style>
+  .receipt {
+    padding: 0 0.5em;
+    font-size: 0.95em;
+  }
   .totals {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));

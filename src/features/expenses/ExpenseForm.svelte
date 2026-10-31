@@ -9,7 +9,9 @@
   import { todayIso } from '../../lib/utils/date';
   import { t } from '../../lib/i18n';
   import MapPicker from '../../lib/components/MapPicker.svelte';
-  import type { Expense, ExpenseLocation, Group, Subitem } from '../../lib/types';
+  import ReceiptPicker from '../documents/ReceiptPicker.svelte';
+  import { myAccess } from '../../lib/stores/groups';
+  import type { DocumentRecord, Expense, ExpenseLocation, Group, Subitem } from '../../lib/types';
 
   let {
     group,
@@ -37,6 +39,16 @@
   let error = $state('');
   let saving = $state(false);
   let categoriesTouched = $state(Boolean(expense));
+  // The scanned bill this was paid with, if the group keeps bills.
+  let documentId = $state<string | null>(expense?.documentId ?? null);
+  let documentLabel = $state<string | null>(expense?.documentLabel ?? null);
+  let pickingReceipt = $state(false);
+  let keepsBills = $derived(group.capabilities.photoSaving && $myAccess.photoSaving !== 'none');
+  function linkReceipt(d: DocumentRecord) {
+    documentId = d.id;
+    documentLabel = [d.vendor, d.date].filter(Boolean).join(' · ');
+    pickingReceipt = false;
+  }
 
   let subitemsTotal = $derived(subitems.reduce((sum, s) => sum + s.price * (s.count ?? 1), 0));
   let parsedItemCount = $derived(itemCount ? parseInt(itemCount, 10) : 1);
@@ -107,6 +119,8 @@
         date,
         location,
         subitems: subitems.filter((s) => s.name.trim() !== ''),
+        documentId,
+        documentLabel: documentId ? documentLabel : null,
       };
       if (expense) {
         await updateExpense(group.id, expense.id, data);
@@ -217,6 +231,25 @@
       <p class="muted">{$t('expenseForm.subitemsTotal', { total: subitemsTotal.toFixed(2) })}</p>
     {/if}
   </div>
+
+  {#if keepsBills}
+    <div class="stack">
+      <div class="row" style="justify-content: space-between">
+        <span>🧾 {$t('receipt.title')} <span class="muted">{$t('expenseForm.optional')}</span></span>
+        {#if documentId}
+          <span class="row">
+            <span class="muted">{documentLabel ?? documentId}</span>
+            <button type="button" onclick={() => { documentId = null; documentLabel = null; }}>{$t('receipt.unlink')}</button>
+          </span>
+        {:else}
+          <button type="button" onclick={() => (pickingReceipt = !pickingReceipt)}>{$t('receipt.link')}</button>
+        {/if}
+      </div>
+      {#if pickingReceipt && !documentId}
+        <ReceiptPicker groupId={group.id} price={totalPrice} {date} onPick={linkReceipt} />
+      {/if}
+    </div>
+  {/if}
 
   <div class="stack">
     {#if showMap}
