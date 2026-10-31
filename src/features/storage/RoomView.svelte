@@ -73,7 +73,7 @@
   {#if !readonly}
     <div class="row">
       {#if candidates.length > 0}
-        <select bind:value={addId} aria-label={$t('storage.addToRoom')} style="flex: 1 1 12rem; width:auto">
+        <select bind:value={addId} aria-label={$t('storage.addToRoom')} style="flex: 1 1 12rem; width:auto; min-width:0; max-width:100%">
           <option value="">{$t('storage.addToRoom')}…</option>
           {#each candidates as u (u.id)}
             <option value={u.id}>{unitIcon(u)} {u.name}{u.parent ? ` (${unitLocationLabel($storageUnits, u, $t)})` : ''}</option>

@@ -347,6 +347,7 @@
     border-color: var(--accent);
   }
   .count {
+    margin-left: 0.3em;
     opacity: 0.75;
     font-size: 0.85em;
   }
