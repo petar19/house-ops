@@ -71,7 +71,7 @@
     return groups;
   });
 
-  const ICONS: Record<StorageEvent['action'], string> = { add: '＋', remove: '−', move: '→', edit: '✎' };
+  const ICONS: Record<StorageEvent['action'], string> = { add: '＋', remove: '−', move: '→', edit: '✎', used: '✓' };
 </script>
 
 <div class="stack">

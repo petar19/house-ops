@@ -19,6 +19,7 @@ export const routes = {
   '/settings': Settings,
   '/documents': Documents,
   '/shopping': ShoppingList,
+  '/shopping/:listId': ShoppingList,
   '/storage': Storage,
   '/storage/history': StorageHistoryPage,
   '/storage/import': ImportPage,

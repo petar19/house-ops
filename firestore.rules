@@ -205,12 +205,19 @@ service cloud.firestore {
         allow delete: if canEdit(groupId, 'expenses');
       }
 
-      // The group's "Shopping list" capability — a flat list of items, each
-      // optionally tied to a restock interval (dumb/manual for now: a fixed
-      // number of days set by hand, no usage-based learning). `reminderId`
-      // links to a doc in the sibling /reminders subcollection below that
-      // nudges the group chat when it's due again.
+      // The group's "Shopping list" capability — named lists, the things on
+      // them, and per-product repeat timers ("buy every N days"). A timer's
+      // `reminderId` points at a doc in the sibling /reminders subcollection
+      // below; when it fires the bot puts the product back on its list.
+      match /shoppingLists/{listId} {
+        allow read: if canView(groupId, 'shoppingList');
+        allow write: if canEdit(groupId, 'shoppingList');
+      }
       match /shoppingItems/{itemId} {
+        allow read: if canView(groupId, 'shoppingList');
+        allow write: if canEdit(groupId, 'shoppingList');
+      }
+      match /shoppingRestock/{productKey} {
         allow read: if canView(groupId, 'shoppingList');
         allow write: if canEdit(groupId, 'shoppingList');
       }

@@ -249,6 +249,9 @@ export interface Reminder {
   // Fires still to go (counting the one currently pending) for a reminder
   // created with ?reminder(WHEN, FREQ, TIMES); unset means it repeats forever.
   timesRemaining?: number;
+  // A shopping repeat timer (see ShoppingRestock): when it fires, the bot
+  // puts this back on the list as well as announcing it.
+  shoppingAdd?: { listId: string; name: string; productKey: string } | null;
   status: 'active' | 'paused' | 'done';
   createdAt: number;
   lastSentAt?: number | null;
@@ -261,22 +264,44 @@ export interface Reminder {
   source: 'app' | 'whatsapp-bot';
 }
 
-// groups/{groupId}/shoppingItems/{id} — the "nabava" capability's flat list.
-// restockIntervalDays is the deliberately dumb version of "how often does
-// this run out" (a fixed number the user sets by hand) rather than anything
-// learned from purchase history — reminderId links to the /reminders doc
-// that pings the group chat when it's due, so marking an item bought (which
-// resets lastBoughtAt and the linked reminder's nextTriggerAt) is the one
-// place that needs to know about both collections.
-export interface ShoppingItem {
+// groups/{groupId}/shoppingLists/{id} — a group can keep several named
+// lists ("Weekly shop", "Hardware store"); the first is made automatically.
+export interface ShoppingList {
   id: string;
   name: string;
-  active: boolean;
-  restockIntervalDays: number | null;
-  lastBoughtAt: string | null; // ISO yyyy-MM-dd
+  createdAt: number;
+  createdBy: string;
+}
+
+// groups/{groupId}/shoppingItems/{id} — one thing to buy on one list.
+// productKey ties it to the product list (storage catalog / built-in
+// products), so its repeat setting and storage stock line up with it.
+// Ticked items stay (struck through) until the list is cleared, so a
+// mis-tap in the shop is easy to undo.
+export interface ShoppingItem {
+  id: string;
+  listId: string;
+  name: string;
+  productKey: string;
+  note: string; // free text, e.g. "2 kg" or "the blue one"
+  checked: boolean;
   addedAt: number;
+  addedBy: string;
+  // storage: added because it ran low; restock: put back by its repeat timer.
+  source: 'manual' | 'storage' | 'restock';
+}
+
+// groups/{groupId}/shoppingRestock/{productKey} — "buy this every N days",
+// set per product. Ticking it off on a list starts the timer: a group
+// reminder (reminderId) fires N days later and the bot puts it back on
+// listId and says so in the group chat.
+export interface ShoppingRestock {
+  id: string; // the product key
+  name: string;
+  days: number;
+  listId: string;
+  lastBoughtAt: string | null; // ISO yyyy-MM-dd
   reminderId: string | null;
-  source: 'manual';
 }
 
 // ── Storage capability ────────────────────────────────────────────────────
@@ -402,7 +427,9 @@ export interface StorageEvent {
   id: string;
   at: number;
   by: string;
-  action: 'add' | 'remove' | 'move' | 'edit';
+  // used: taken out because it ran out (eaten, used up) — unlike remove,
+  // which is for mistakes and things given away.
+  action: 'add' | 'remove' | 'move' | 'edit' | 'used';
   itemId: string;
   itemName: string;
   unitId: string;

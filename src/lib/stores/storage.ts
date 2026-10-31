@@ -453,12 +453,23 @@ export async function moveItems(
   });
 }
 
-export async function removeItems(groupId: string, items: StorageItem[], placeOf: PlaceOf): Promise<void> {
+/**
+ * Takes items out of storage. `used` (eaten, used up) and `remove` (a
+ * mistake, given away) look the same in the grid, but the history keeps
+ * them apart. Either way the product still remembers where it lives (its
+ * catalog lastPlace), so the next import offers to put it back there.
+ */
+export async function removeItems(
+  groupId: string,
+  items: StorageItem[],
+  placeOf: PlaceOf,
+  action: 'remove' | 'used' = 'remove',
+): Promise<void> {
   await inChunks(items, 200, (batch, chunk) => {
     for (const item of chunk) {
       batch.delete(doc(col(groupId, 'storageItems'), item.id));
       logEvent(batch, groupId, {
-        action: 'remove',
+        action,
         itemId: item.id,
         itemName: item.name,
         unitId: item.unitId,

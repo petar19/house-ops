@@ -1,7 +1,9 @@
 <script lang="ts">
   import { push } from 'svelte-spa-router';
   import { t } from '../../lib/i18n';
-  import { activeGroup } from '../../lib/stores/groups';
+  import { activeGroup, myAccess } from '../../lib/stores/groups';
+  import { addToList, defaultListId, shoppingItems, shoppingLists } from '../../lib/stores/shopping';
+  import { productOf } from '../../lib/shopping/lowStock';
   import {
     addItem,
     catalogOptions,
@@ -182,6 +184,46 @@
     selectedIds = selectedItems.length === items.length ? new Set() : new Set(items.map((i) => i.id));
   }
 
+  function useUpSelected() {
+    const used = selectedItems;
+    run(async () => {
+      await removeItems(groupId, used, placeOf, 'used');
+      selectedIds = new Set();
+      offerRestock(used);
+    });
+  }
+
+  // ── Shopping list ──
+  // Anything running low gets a 🛒 button; using something up offers to put
+  // it on the list. It goes on the list last used on this device.
+  let canShop = $derived(!!$activeGroup?.capabilities.shoppingList && $myAccess.shoppingList === 'edit');
+  let notice = $state('');
+  let restockOffer = $state<StorageItem[]>([]);
+  function listName(id: string | null): string {
+    return $shoppingLists.find((l) => l.id === id)?.name ?? $t('shopping.defaultList');
+  }
+  function onList(item: StorageItem): boolean {
+    const key = productOf(item.name, $catalogOptions).productKey;
+    return $shoppingItems.some((i) => i.productKey === key && !i.checked);
+  }
+  function offerRestock(used: StorageItem[]) {
+    if (!canShop) return;
+    restockOffer = used.filter((i) => !onList(i));
+  }
+  function addToShopping(list: StorageItem[]) {
+    const listId = defaultListId();
+    if (!listId) {
+      error = $t('shopping.capabilityOff');
+      return;
+    }
+    const candidates = list.map((i) => productOf(i.name, $catalogOptions));
+    run(async () => {
+      const added = await addToList(groupId, listId, candidates, 'storage');
+      notice = $t(added > 0 ? 'shopping.addedToList' : 'shopping.alreadyOnList', { list: listName(listId) });
+      restockOffer = [];
+    });
+  }
+
   function deleteSelected() {
     if (!confirm($t('storage.deleteConfirm', { count: selectedItems.length }))) return;
     run(async () => {
@@ -197,7 +239,12 @@
       run(() => updateItem(groupId, item, { amount: 0 }, [], placeOf));
       return;
     }
-    if (amount === 0) run(() => removeItems(groupId, [item], placeOf));
+    if (amount === 0) {
+      run(async () => {
+        await removeItems(groupId, [item], placeOf, 'used');
+        offerRestock([item]);
+      });
+    }
     else run(() => updateItem(groupId, item, { amount }, [], placeOf));
   }
   function setLevel(item: StorageItem, level: StorageLevel) {
@@ -213,6 +260,8 @@
   let addLevel = $state<StorageLevel>('some');
   // Optional: what it cost — recorded as a purchase today for the price history.
   let addPrice = $state<number | undefined>(undefined);
+  let addExpiry = $state('');
+  let addMore = $state(false);
 
   function onAddPick(option: CatalogOption) {
     addPicked = option;
@@ -236,7 +285,7 @@
       error = $t('storage.invalidAmount');
       return;
     }
-    const draft: ItemDraft = { name, ...draftFrom(addMode, addAmount, addUnit, addLevel), expiry: null, note: '' };
+    const draft: ItemDraft = { name, ...draftFrom(addMode, addAmount, addUnit, addLevel), expiry: addExpiry || null, note: '' };
     const categories = categoriesFor(name, addPicked);
     const price = addPrice === undefined || addPrice === null || Number.isNaN(addPrice) ? null : addPrice;
     run(async () => {
@@ -259,6 +308,7 @@
         ]);
       }
       addPrice = undefined;
+      addExpiry = '';
       addName = '';
       addPicked = null;
       addAmount = 1;
@@ -319,6 +369,16 @@
 
   function memberName(uid: string): string {
     return $activeGroup?.members[uid]?.displayName ?? '?';
+  }
+
+  function useUpEditing() {
+    const item = editing;
+    if (!item) return;
+    run(async () => {
+      await removeItems(groupId, [item], placeOf, 'used');
+      view = 'list';
+      offerRestock([item]);
+    });
   }
 
   function makeContainer() {
@@ -439,6 +499,8 @@
         {#if selectedItems.length > 0}
           <span class="muted">{$t('storage.selected', { count: selectedItems.length })}</span>
           <button onclick={startMove} disabled={busy}>{$t('storage.move')}</button>
+          <button onclick={useUpSelected} disabled={busy} title={$t('storage.usedUpHint')}>✓ {$t('storage.usedUp')}</button>
+          {#if canShop}<button onclick={() => addToShopping(selectedItems)} disabled={busy} title={$t('shopping.addToList')}>🛒</button>{/if}
           <button class="danger" onclick={deleteSelected} disabled={busy}>{$t('common.delete')}</button>
         {/if}
       </div>
@@ -478,6 +540,9 @@
                 {#each ['plenty', 'some', 'low', 'empty'] as l (l)}<option value={l}>{$t(`storage.qty.${l}`)}</option>{/each}
               </select>
             {/if}
+            {#if canShop && isLow(item) && !onList(item)}
+              <button class="details" onclick={() => addToShopping([item])} disabled={busy} title={$t('shopping.addToList')} aria-label={$t('shopping.addToList')}>🛒</button>
+            {/if}
             {#if !readonly && usualOf(item)}
               <button class="details" onclick={() => putUsual(item)} disabled={busy} title={$t('inbox.putThere')} aria-label={$t('inbox.putThere')}>📍</button>
             {/if}
@@ -497,6 +562,16 @@
           </li>
         {/each}
       </ul>
+    {/if}
+
+    {#if restockOffer.length > 0}
+      <div class="row offer">
+        <span>{$t('storage.usedUpOffer', { names: restockOffer.map((i) => i.name).join(', ') })}</span>
+        <button class="primary" onclick={() => addToShopping(restockOffer)} disabled={busy}>🛒 {$t('shopping.addToList')}</button>
+        <button onclick={() => (restockOffer = [])}>{$t('common.cancel')}</button>
+      </div>
+    {:else if notice}
+      <p class="muted" style="margin:0">✓ {notice}</p>
     {/if}
 
     {#if !readonly}
@@ -520,7 +595,14 @@
         title={$t('import.price')}
         aria-label={$t('import.price')}
       />
+      <button type="button" class="more" onclick={() => (addMore = !addMore)} aria-expanded={addMore} title={$t('storage.field.expiry')}>📅</button>
       <button class="primary" type="submit" disabled={busy || !addName.trim()}>{$t('common.add')}</button>
+      {#if addMore || addExpiry}
+        <label class="row expiry-in">
+          <span class="muted">{$t('storage.field.expiry')}</span>
+          <input type="date" bind:value={addExpiry} />
+        </label>
+      {/if}
     </form>
     {#if !looseOnly}
     <div class="row container-actions">
@@ -610,7 +692,10 @@
         <button class="primary" type="submit" disabled={busy}>{$t('common.save')}</button>
         <button type="button" onclick={() => (view = 'list')}>{$t('common.cancel')}</button>
       </div>
-      <button type="button" onclick={makeContainer} disabled={busy} title={$t('storage.makeContainerHint')}>📦 {$t('storage.makeContainer')}</button>
+      <div class="row">
+        <button type="button" onclick={useUpEditing} disabled={busy} title={$t('storage.usedUpHint')}>✓ {$t('storage.usedUp')}</button>
+        <button type="button" onclick={makeContainer} disabled={busy} title={$t('storage.makeContainerHint')}>📦 {$t('storage.makeContainer')}</button>
+      </div>
     </div>
     {@render historyList()}
   </form>
@@ -721,6 +806,24 @@
   }
   .facts dd {
     margin: 0;
+  }
+  .offer {
+    padding: 0.5rem 0.6rem;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .offer span {
+    flex: 1 1 12rem;
+  }
+  .more {
+    flex: 0 0 auto;
+    padding: 0.4em 0.5em;
+  }
+  .expiry-in {
+    flex-basis: 100%;
+  }
+  .expiry-in input {
+    width: auto;
   }
   .add-price {
     width: 5.5em !important;

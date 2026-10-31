@@ -19,6 +19,8 @@
   import { matchQuality, type CatalogOption } from '../../lib/storage/suggest';
   import { SYSTEM_CATEGORIES, type PriceUnit } from '../../lib/storage/systemCatalog';
   import ChartView from '../../lib/components/ChartView.svelte';
+  import { addToList, defaultListId, setRestock, shoppingItems, shoppingLists, shoppingRestock } from '../../lib/stores/shopping';
+  import { restockDue } from '../../lib/shopping/lowStock';
   import type { Purchase } from '../../lib/types';
 
   // One product: where it is now, what it has cost over time (per kg / l /
@@ -179,6 +181,38 @@
     });
   }
 
+  // ── Shopping: on a list? bought every N days? ──
+  let seesShopping = $derived(!!$activeGroup?.capabilities.shoppingList && $myAccess.shoppingList !== 'none');
+  let canShop = $derived($myAccess.shoppingList === 'edit');
+  let restock = $derived($shoppingRestock.find((r) => r.id === productKey) ?? null);
+  let onLists = $derived(
+    $shoppingItems
+      .filter((i) => i.productKey === productKey && !i.checked)
+      .map((i) => $shoppingLists.find((l) => l.id === i.listId))
+      .filter((l) => !!l),
+  );
+  let repeatDays = $state<number | undefined>(undefined);
+  let repeatList = $state('');
+  $effect(() => {
+    repeatDays = restock?.days;
+    repeatList = restock?.listId ?? defaultListId() ?? '';
+  });
+  function saveRepeat(e: SubmitEvent) {
+    e.preventDefault();
+    if (!product) return;
+    const days = repeatDays === undefined || repeatDays === null || Number.isNaN(repeatDays) || repeatDays <= 0 ? null : repeatDays;
+    const p = { name: product.name, productKey };
+    run(() => setRestock(groupId, p, days, repeatList));
+  }
+  function putOnList() {
+    const listId = defaultListId();
+    if (!product || !listId) return;
+    const p = { name: product.name, productKey };
+    run(async () => {
+      await addToList(groupId, listId, [p]);
+    });
+  }
+
   function lineAmount(p: Purchase): string {
     const qty = p.quantity !== null ? `${p.quantity}${p.unit ? ' ' + p.unit : ''}` : '';
     const pack = p.packAmount ? ` × ${p.packAmount} ${p.packUnit ?? ''}` : '';
@@ -284,6 +318,39 @@
         {/each}
       {/if}
     </div>
+
+    {#if seesShopping}
+      <div class="card stack">
+        <h3 style="margin:0">🛒 {$t('shopping.title')}</h3>
+        <div class="row" style="justify-content: space-between">
+          <span class="muted">
+            {#if onLists.length > 0}
+              {$t('products.onLists', { lists: onLists.map((l) => l!.name).join(', ') })}
+            {:else}
+              {$t('products.notOnList')}
+            {/if}
+          </span>
+          {#if canShop && onLists.length === 0}<button onclick={putOnList} disabled={busy}>+ {$t('shopping.addToList')}</button>{/if}
+        </div>
+        {#if canShop}
+          <form class="row" onsubmit={saveRepeat}>
+            <span class="muted">{$t('shopping.repeatEvery')}</span>
+            <input type="number" min="1" style="width:5em" bind:value={repeatDays} aria-label={$t('shopping.repeatEvery')} />
+            <span class="muted">{$t('products.daysOnto')}</span>
+            <select bind:value={repeatList} style="width:auto">
+              {#each $shoppingLists as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
+            </select>
+            <button type="submit" disabled={busy || !repeatList}>{$t('common.save')}</button>
+          </form>
+          <span class="muted hint">{$t('shopping.repeatHint')}</span>
+        {:else if restock}
+          <span class="muted">{$t('shopping.repeats', { days: restock.days })}</span>
+        {/if}
+        {#if restock?.lastBoughtAt}
+          <span class="muted">{$t('shopping.backOn', { date: restockDue(restock.lastBoughtAt, restock.days) })}</span>
+        {/if}
+      </div>
+    {/if}
 
     <div class="card stack">
       <h3 style="margin:0">{$t('products.priceHistory')}</h3>
@@ -400,5 +467,8 @@
     border: none;
     background: none;
     color: var(--text-dim);
+  }
+  .hint {
+    font-size: 0.85em;
   }
 </style>

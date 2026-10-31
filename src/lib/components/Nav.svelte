@@ -39,7 +39,7 @@
         <a href="/documents" use:link use:active>{$t('nav.documents')}</a>
       {/if}
       {#if $myAccess.shoppingList !== 'none'}
-        <a href="/shopping" use:link use:active>{$t('nav.shopping')}</a>
+        <a href="/shopping" use:link use:active={'/shopping*'}>{$t('nav.shopping')}</a>
       {/if}
       {#if $myAccess.storage !== 'none'}
         <a href="/storage" use:link use:active={'/storage*'}>{$t('nav.storage')}</a>
