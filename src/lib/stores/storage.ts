@@ -144,7 +144,12 @@ export async function createUnit(groupId: string, draft: UnitDraft, parent: Stor
 export async function updateUnit(
   groupId: string,
   unitId: string,
-  patch: Partial<UnitDraft> & { cellNames?: Record<string, string>; parent?: StoragePlacement | null },
+  patch: Partial<UnitDraft> & {
+    cellNames?: Record<string, string>;
+    parent?: StoragePlacement | null;
+    floor?: StorageUnit['floor'];
+    floorSpot?: StorageUnit['floorSpot'];
+  },
 ): Promise<void> {
   await updateDoc(doc(col(groupId, 'storageUnits'), unitId), patch);
 }

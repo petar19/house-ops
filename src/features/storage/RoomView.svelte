@@ -2,7 +2,9 @@
   import { push } from 'svelte-spa-router';
   import { t } from '../../lib/i18n';
   import { activeGroup } from '../../lib/stores/groups';
-  import { placeUnit, storageUnits } from '../../lib/stores/storage';
+  import { placeUnit, storageUnits, updateUnit } from '../../lib/stores/storage';
+  import { DEFAULT_FLOOR } from '../../lib/storage/floorPlan';
+  import FloorPlan from './FloorPlan.svelte';
   import { ROOM_CELL, fullPlaceLabel, isRoom, unitIcon, unitLocationLabel } from '../../lib/storage/layout';
   import Modal from '../../lib/components/Modal.svelte';
   import type { StorageUnit } from '../../lib/types';
@@ -10,8 +12,8 @@
   import UnitCard from './UnitCard.svelte';
   import UnitEditor from './UnitEditor.svelte';
 
-  // A room's page: the storage in it as cards, plus the things lying loose
-  // in it (its single cell). No floor plan — where in the room isn't stored.
+  // A room's page: an optional floor plan, the storage in it as cards, plus
+  // the things lying loose in it (its single cell).
   let { room, readonly = false }: { room: StorageUnit; readonly?: boolean } = $props();
 
   let groupId = $derived($activeGroup?.id ?? '');
@@ -55,6 +57,12 @@
 </script>
 
 <div class="stack">
+  {#if room.floor}
+    <FloorPlan {room} units={inRoom} {readonly} />
+  {:else if !readonly && inRoom.length > 0}
+    <button onclick={() => updateUnit(groupId, room.id, { floor: DEFAULT_FLOOR })}>🗺️ {$t('floor.create')}</button>
+  {/if}
+
   {#if inRoom.length === 0}
     <p class="muted" style="margin:0">{$t('storage.noStorageInRoom')}</p>
   {/if}

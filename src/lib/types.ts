@@ -360,8 +360,20 @@ export interface StorageUnit {
   // The group's one "Unsorted" container, where imported items land until
   // they're put away (created on first import).
   inbox?: boolean;
+  // A room's optional floor plan: a rows×cols grid of squares…
+  floor?: { rows: number; cols: number } | null;
+  // …and where a unit in that room stands on it (top-left square, 1-based,
+  // and how many squares it takes). Only read while it's in a planned room.
+  floorSpot?: FloorSpot | null;
   createdAt: number;
   createdBy: string;
+}
+
+export interface FloorSpot {
+  row: number;
+  col: number;
+  w: number;
+  h: number;
 }
 
 export interface StoragePlacement {
