@@ -2,11 +2,16 @@
   import { link, push, router } from 'svelte-spa-router';
   import { t } from '../../lib/i18n';
   import { activeGroupId, activeGroupResolvedId, myAccess, myGroups, myGroupsLoading } from '../../lib/stores/groups';
-  import { catalogOptions, storageItems, storageLoading, storageUnits } from '../../lib/stores/storage';
+  import { catalogOptions, moveItems, placeUnit, storageItems, storageLoading, storageUnits } from '../../lib/stores/storage';
+  import { activeGroup } from '../../lib/stores/groups';
   import {
     cellExists,
     cellLabel,
     coveredOf,
+    fitsAt,
+    fullPlaceLabel,
+    makePlaceOf,
+    shiftCells,
     levelLabel,
     isRoom,
     parseCellId,
@@ -86,6 +91,43 @@
   let matchIds = $derived(new Set(matches.map((i) => i.id)));
   let highlightCells = $derived(new Set(matches.flatMap((i) => coveredOf(i))));
 
+  // Dragging a name from one cell onto another moves it there. A big item
+  // keeps its shape: its anchor shifts by as much as the cell it was grabbed
+  // by moved.
+  let dropError = $state('');
+  async function handleDrop(what: { kind: 'item' | 'container'; id: string }, fromCell: string, toCell: string) {
+    const groupId = $activeGroup?.id;
+    if (!unit || !groupId || readonly) return;
+    dropError = '';
+    try {
+      if (what.kind === 'item') {
+        const item = unitItems.find((i) => i.id === what.id);
+        if (!item) return;
+        const anchor = shiftCells([item.cellId], fromCell, toCell)[0];
+        if (!fitsAt(unit, item, anchor)) {
+          dropError = $t('storage.spanNoFit', { names: item.name });
+          return;
+        }
+        await moveItems(groupId, [item], unit.id, anchor, makePlaceOf($storageUnits, $t));
+      } else {
+        const c = innerContainers.find((u) => u.id === what.id);
+        if (!c?.parent) return;
+        const anchor = shiftCells([c.parent.cellId], fromCell, toCell)[0];
+        if (!fitsAt(unit, c.parent, anchor)) {
+          dropError = $t('storage.spanNoFit', { names: c.name });
+          return;
+        }
+        const cells = c.parent.cells ? shiftCells(c.parent.cells, c.parent.cellId, anchor) : null;
+        await placeUnit(groupId, c, { unitId: unit.id, cellId: anchor, cells, span: null }, {
+          from: fullPlaceLabel($storageUnits, unit.id, c.parent.cellId, $t),
+          to: fullPlaceLabel($storageUnits, unit.id, anchor, $t),
+        });
+      }
+    } catch (e) {
+      dropError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
   let cellTitle = $derived.by(() => {
     if (!unit || !openCellId) return '';
     const p = parseCellId(openCellId);
@@ -130,8 +172,17 @@
       <p class="muted" style="margin:0">{$t('storage.matchesHere', { count: matches.length })}</p>
     {/if}
 
-    <div class="card">
-      <UnitGrid {unit} items={unitItems} containers={innerContainers} highlight={highlightCells} onPick={(id) => (openCellId = id)} />
+    <div class="card stack">
+      <UnitGrid
+        {unit}
+        items={unitItems}
+        containers={innerContainers}
+        highlight={highlightCells}
+        onPick={(id) => (openCellId = id)}
+        onDrop={readonly ? undefined : handleDrop}
+      />
+      {#if !readonly}<span class="muted hint">{$t('storage.dragHint')}</span>{/if}
+      {#if dropError}<span class="muted" style="color: var(--danger)">{dropError}</span>{/if}
     </div>
     {/if}
   {/if}
@@ -183,6 +234,9 @@
 {/if}
 
 <style>
+  .hint {
+    font-size: 0.85em;
+  }
   .back,
   .inside {
     text-decoration: none;

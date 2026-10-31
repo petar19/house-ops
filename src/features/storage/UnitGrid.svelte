@@ -1,12 +1,14 @@
 <script lang="ts">
   import { t } from '../../lib/i18n';
   import { cellLabel, coveredOf, isLow, isSpanning, levelCellIds, levelLabel, unitIcon } from '../../lib/storage/layout';
+  import { dragToCell } from '../../lib/storage/dragToCell';
   import type { StorageItem, StorageUnit } from '../../lib/types';
 
   // The 2D view of one unit, generated purely from its template numbers:
   // each level (shelf / layer / drawer / spot) is a rows×cols grid of cells.
   // Doubles as the destination picker when moving items (`compact`).
   let {
+    onDrop,
     unit,
     items,
     containers = [],
@@ -24,6 +26,9 @@
     disabledCell?: string | null;
     compact?: boolean;
     onPick?: (cellId: string, event: MouseEvent) => void;
+    // Set to let names be dragged onto another cell: what was dragged, the
+    // cell it was dragged from (a big item shows in several) and where to.
+    onDrop?: (what: { kind: 'item' | 'container'; id: string }, fromCell: string, toCell: string) => void;
   } = $props();
 
   let byCell = $derived.by(() => {
@@ -80,6 +85,7 @@
             class:highlight={highlight.has(id)}
             class:selected={selected === id}
             class:empty={total === 0}
+            data-drop-cell={onDrop ? id : undefined}
             disabled={disabledCell === id || !onPick}
             onclick={(e) => onPick?.(id, e)}
           >
@@ -91,10 +97,19 @@
             </span>
             {#if !compact}
               {#each cellContainers.slice(0, PREVIEW_NAMES) as c (c.id)}
-                <span class="item-name container">{unitIcon(c)} {c.name}</span>
+                <span
+                  class="item-name container"
+                  class:draggable={!!onDrop}
+                  use:dragToCell={{ enabled: !!onDrop, fromCell: id, label: `${unitIcon(c)} ${c.name}`, onDrop: (to) => onDrop?.({ kind: 'container', id: c.id }, id, to) }}
+                >{unitIcon(c)} {c.name}</span>
               {/each}
               {#each cellItems.slice(0, Math.max(PREVIEW_NAMES - cellContainers.length, 0)) as item (item.id)}
-                <span class="item-name" class:low={isLow(item)}>{#if isSpanning(item)}<span class="span-mark" title={$t('storage.spans')}>⧉</span> {/if}{item.name}</span>
+                <span
+                  class="item-name"
+                  class:low={isLow(item)}
+                  class:draggable={!!onDrop}
+                  use:dragToCell={{ enabled: !!onDrop, fromCell: id, label: item.name, onDrop: (to) => onDrop?.({ kind: 'item', id: item.id }, id, to) }}
+                >{#if isSpanning(item)}<span class="span-mark" title={$t('storage.spans')}>⧉</span> {/if}{item.name}</span>
               {/each}
               {#if total > PREVIEW_NAMES}
                 <span class="more">{$t('storage.more', { count: total - PREVIEW_NAMES })}</span>
@@ -197,6 +212,20 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .item-name.draggable {
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .cell:global(.drop-over) {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent) inset;
+    background: color-mix(in srgb, var(--accent) 15%, var(--surface));
+  }
+  :global(body.cell-dragging) {
+    cursor: grabbing;
   }
   .item-name.low {
     color: var(--danger);

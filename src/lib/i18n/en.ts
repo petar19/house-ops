@@ -458,6 +458,7 @@ export const en: Record<string, string> = {
   'storage.usedUp': 'Used up',
   'storage.usedUpHint': 'Ran out or was used — takes it out but remembers where it goes',
   'storage.usedUpOffer': 'Used up: {names}. Put it on the shopping list?',
+  'storage.dragHint': 'Tip: drag a name onto another cell to move it (on a phone, press and hold first).',
   'storage.removeAtZero': 'None of "{name}" left — remove it from here? (Cancel keeps it at 0)',
   'storage.expires': 'exp. {date}',
   'storage.decrease': 'Decrease',

@@ -458,6 +458,7 @@ export const hr: Record<string, string> = {
   'storage.usedUp': 'Potrošeno',
   'storage.usedUpHint': 'Ponestalo je ili je iskorišteno — makne ga, ali pamti gdje stoji',
   'storage.usedUpOffer': 'Potrošeno: {names}. Dodati na popis za nabavu?',
+  'storage.dragHint': 'Savjet: povuci naziv na drugo polje da ga premjestiš (na mobitelu ga prvo pritisni i drži).',
   'storage.removeAtZero': '"{name}" je potrošeno — ukloniti odavde? (Odustani ga ostavlja na 0)',
   'storage.expires': 'rok {date}',
   'storage.decrease': 'Smanji',
