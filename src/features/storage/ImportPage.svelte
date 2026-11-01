@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { setChecked, shoppingItems, shoppingLists } from '../../lib/stores/shopping';
+  import { productOf } from '../../lib/shopping/lowStock';
+  import type { ShoppingItem } from '../../lib/types';
   import { shelfFor } from '../../lib/storage/expirySuggest';
   import { daysBetween } from '../../lib/storage/shelfLife';
   import { shrinkPhoto } from '../../lib/utils/image';
@@ -108,12 +111,46 @@
       if (selectedBill) {
         await markReceiptImported(groupId, selectedBill.id, requests.get(selectedBill.id)?.status ?? 'done');
       }
+      // Bought things that are on a shopping list: offer to tick them off.
+      const keys = new Set(ready.map((r) => productOf(r.name, $catalogOptions).productKey));
+      const onLists = canShop ? $shoppingItems.filter((i) => !i.checked && keys.has(i.productKey)) : [];
+      if (onLists.length > 0) {
+        afterImport = { unitId, items: onLists };
+        tickIds = new Set(onLists.map((i) => i.id));
+      } else {
+        push(`/storage/${unitId}`);
+      }
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  // ── After importing: tick off what was on the shopping lists ──
+  let canShop = $derived(!!$activeGroup?.capabilities.shoppingList && $myAccess.shoppingList === 'edit');
+  let afterImport = $state<{ unitId: string; items: ShoppingItem[] } | null>(null);
+  let tickIds = $state<Set<string>>(new Set());
+  async function tickBought() {
+    if (!afterImport) return;
+    const { unitId, items } = afterImport;
+    busy = true;
+    try {
+      for (const item of items.filter((i) => tickIds.has(i.id))) {
+        await setChecked(groupId, item, true, $t('shopping.restockText', { name: item.name }));
+      }
       push(`/storage/${unitId}`);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
       busy = false;
     }
+  }
+  function toggleTick(id: string) {
+    const next = new Set(tickIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    tickIds = next;
   }
 
   // ── Expiry dates Gemini is asked about ──
@@ -346,6 +383,22 @@
 
   {#if !canEdit}
     <p class="muted">{$t('access.noAccess')}</p>
+  {:else if afterImport}
+    <div class="card stack">
+      <strong>✓ {$t('import.done')}</strong>
+      <span>🛒 {$t('import.onLists', { count: afterImport.items.length })}</span>
+      {#each afterImport.items as item (item.id)}
+        <label class="row">
+          <input type="checkbox" checked={tickIds.has(item.id)} onchange={() => toggleTick(item.id)} />
+          <span>{item.name} <span class="muted">· {$shoppingLists.find((l) => l.id === item.listId)?.name ?? ''}</span></span>
+        </label>
+      {/each}
+      <div class="row">
+        <button class="primary" onclick={tickBought} disabled={busy || tickIds.size === 0}>{$t('import.tickOff', { count: tickIds.size })}</button>
+        <button onclick={() => push(`/storage/${afterImport!.unitId}`)} disabled={busy}>{$t('import.skipTick')}</button>
+      </div>
+      {#if error}<p class="muted" style="color: var(--danger); margin:0">{error}</p>{/if}
+    </div>
   {:else}
     <p class="muted" style="margin:0">{$t('import.intro')}</p>
     <div class="tabs row">
