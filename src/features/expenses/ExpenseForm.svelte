@@ -8,7 +8,6 @@
   import { computePerItemPrice, computeTotalPrice } from '../../lib/utils/pricing';
   import { todayIso } from '../../lib/utils/date';
   import { t } from '../../lib/i18n';
-  import MapPicker from '../../lib/components/MapPicker.svelte';
   import ReceiptPicker from '../documents/ReceiptPicker.svelte';
   import { myAccess } from '../../lib/stores/groups';
   import type { DocumentRecord, Expense, ExpenseLocation, Group, Subitem } from '../../lib/types';
@@ -253,7 +252,10 @@
 
   <div class="stack">
     {#if showMap}
-      <MapPicker {location} onChange={(loc) => (location = loc)} />
+      <!-- The map (Leaflet) loads only when someone opens it. -->
+      {#await import('../../lib/components/MapPicker.svelte') then { default: MapPicker }}
+        <MapPicker {location} onChange={(loc: ExpenseLocation | null) => (location = loc)} />
+      {/await}
       <button type="button" onclick={() => { showMap = false; location = null; }}>{$t('expenseForm.removeLocation')}</button>
     {:else}
       <button type="button" onclick={() => (showMap = true)}>{$t('expenseForm.addLocation')}</button>

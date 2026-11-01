@@ -1,6 +1,5 @@
 import { get, writable } from 'svelte/store';
 import { arrayUnion, doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { getMessaging, getToken, isSupported } from 'firebase/messaging';
 import { app, db, VAPID_KEY } from '../firebase';
 import { currentUser } from './auth';
 import { groupIdFor } from './groups';
@@ -38,6 +37,8 @@ export async function enableNotifications(groupId: string): Promise<void> {
   const user = get(currentUser);
   if (!user) throw new Error('Not signed in');
 
+  // Messaging is only needed here, so it's loaded on demand.
+  const { getMessaging, getToken, isSupported } = await import('firebase/messaging');
   if (!(await isSupported())) {
     throw new Error('Push notifications are not supported in this browser');
   }

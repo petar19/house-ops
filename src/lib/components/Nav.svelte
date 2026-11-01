@@ -8,7 +8,6 @@
   import ThemePicker from './ThemePicker.svelte';
   import GroupSwitcher from './GroupSwitcher.svelte';
   import Modal from './Modal.svelte';
-  import AdminPanel from '../../features/admin/AdminPanel.svelte';
 
   let adminOpen = $state(false);
 </script>
@@ -60,7 +59,9 @@
 {#if $allowedRole === 'admin'}
   <Modal open={adminOpen} onClose={() => (adminOpen = false)} title={$t('nav.admin')}>
     {#snippet children()}
-      <AdminPanel />
+      {#await import('../../features/admin/AdminPanel.svelte') then { default: AdminPanel }}
+        <AdminPanel />
+      {/await}
     {/snippet}
   </Modal>
 {/if}
