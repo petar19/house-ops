@@ -26,10 +26,15 @@ import { SYSTEM_ITEMS } from '../storage/systemCatalog';
 import { mergeCatalog, resolveProduct, type CatalogOption } from '../storage/suggest';
 import { unitPrice } from '../storage/pricing';
 import type { PriceUnit } from '../storage/systemCatalog';
-import { canMerge, cellsOf, coveredOf, isSpanning, shapeOf, shiftCells, type PlaceOf } from '../storage/layout';
+import { canMerge, cellsOf, coveredOf, isSpanning, shapeOf, shiftCells, unitClimate, type PlaceOf } from '../storage/layout';
+import { expiryAfterMove, type Climate } from '../storage/shelfLife';
+import { shelfFor } from '../storage/expirySuggest';
+import { toIso } from '../utils/date';
 import { combineDrafts, type ImportDraft } from '../storage/importParse';
 import type {
+  LearnedShelfLife,
   Purchase,
+  ShelfLifeRequest,
   ReceiptItemRequest,
   StorageCatalogEntry,
   StorageCategory,
@@ -45,6 +50,7 @@ export const storageUnits = writable<StorageUnit[]>([]);
 export const storageItems = writable<StorageItem[]>([]);
 export const storageCatalog = writable<StorageCatalogEntry[]>([]);
 export const storageCategories = writable<StorageCategory[]>([]);
+export const shelfLifeLearned = writable<LearnedShelfLife[]>([]);
 export const storageLoading = writable(true);
 
 // A household has hundreds to a few thousand stored items at most, so the
@@ -60,6 +66,7 @@ groupIdFor('storage').subscribe((groupId) => {
   storageItems.set([]);
   storageCatalog.set([]);
   storageCategories.set([]);
+  shelfLifeLearned.set([]);
   if (!groupId) {
     storageLoading.set(false);
     return;
@@ -82,6 +89,7 @@ groupIdFor('storage').subscribe((groupId) => {
     sub<StorageItem>('storageItems', storageItems, () => storageLoading.set(false)),
     sub<StorageCatalogEntry>('storageCatalog', storageCatalog),
     sub<StorageCategory>('storageCategories', storageCategories),
+    sub<LearnedShelfLife>('shelfLife', shelfLifeLearned),
   );
 });
 
@@ -128,6 +136,7 @@ export interface UnitDraft {
   levelNames: Record<string, string>;
   icon: string | null;
   movable: boolean;
+  climate?: StorageUnit['climate'];
 }
 
 export async function createUnit(groupId: string, draft: UnitDraft, parent: StoragePlacement | null = null): Promise<string> {
@@ -296,7 +305,8 @@ export async function addItem(
   const same = get(storageItems).find(
     (i) =>
       i.unitId === unitId && i.cellId === cellId && i.nameKey === nameKey && !isSpanning(i) &&
-      i.qtyMode === 'count' && draft.qtyMode === 'count' && (i.unit ?? '') === (draft.unit ?? ''),
+      i.qtyMode === 'count' && draft.qtyMode === 'count' && (i.unit ?? '') === (draft.unit ?? '') &&
+      (i.expiry ?? '') === (draft.expiry ?? ''),
   );
 
   if (same && same.amount !== null && draft.amount !== null) {
@@ -403,12 +413,25 @@ export async function moveItems(
   const runningAmount = new Map<string, number>();
   // Something taking up several cells keeps its shape, moved to the new anchor.
   const movedCells = (item: StorageItem) => shiftCells(coveredOf(item), item.cellId, toCellId);
+  // Into a freezer the clock restarts at the freezer time; out of one (it
+  // thaws) only the fridge/room time is left. Unsorted counts as neither.
+  const units = get(storageUnits);
+  const toClimate = unitClimate(units, toUnitId);
+  const today = toIso(new Date());
+  const options = get(catalogOptions);
+  const newExpiry = (item: StorageItem): string | null => {
+    const from = unitClimate(units, item.unitId);
+    if (!from || !toClimate) return null;
+    return expiryAfterMove(shelfFor(item.name, options, get(shelfLifeLearned)), item.expiry, from, toClimate, today);
+  };
 
   // Up to 6 writes per item: the item, the entry it merges into, two
   // events and its catalog entry.
   await inChunks(moving, 80, (batch, chunk) => {
-    for (const item of chunk) {
+    for (const original of chunk) {
       const now = Date.now();
+      const expiry = newExpiry(original);
+      const item = expiry ? { ...original, expiry } : original;
       logEvent(batch, groupId, {
         action: 'move',
         itemId: item.id,
@@ -419,6 +442,7 @@ export async function moveItems(
         toUnitId,
         toCellId,
         toPlace: placeOf(toUnitId, toCellId, movedCells(item)),
+        ...(expiry ? { changes: { expiry: { from: original.expiry, to: expiry } } } : {}),
       });
       const target = atTarget.find((t) => t.id !== item.id && canMerge(t, item));
       if (target) {
@@ -443,6 +467,7 @@ export async function moveItems(
           cellId: toCellId,
           cells: cells.length > 1 ? cells : null,
           span: null,
+          ...(expiry ? { expiry } : {}),
           updatedAt: now,
           updatedBy: me,
         });
@@ -636,6 +661,69 @@ export async function requestReceiptPhoto(groupId: string, base64: string): Prom
     mimeType: 'image/jpeg',
   });
   return ref.id;
+}
+
+// ── Shelf life (expiry suggestions) ──────────────────────────────────────
+
+export interface ShelfLesson {
+  name: string;
+  climate: Climate;
+  days: number;
+}
+
+/**
+ * Remembers how long products keep, from dates someone typed or confirmed:
+ * next time the same product gets that many days without asking anyone.
+ */
+export async function learnShelfLife(groupId: string, lessons: ShelfLesson[]): Promise<void> {
+  const options = get(catalogOptions);
+  const learned = get(shelfLifeLearned);
+  const batch = writeBatch(db);
+  const seen = new Set<string>();
+  for (const l of lessons) {
+    if (!(l.days > 0) || l.days > 3650) continue;
+    const p = shelfFor(l.name, options, learned);
+    if (!p.productKey || seen.has(p.productKey + l.climate)) continue;
+    seen.add(p.productKey + l.climate);
+    if (p.shelfLife?.[l.climate] === l.days) continue; // nothing new
+    batch.set(
+      doc(col(groupId, 'shelfLife'), p.productKey),
+      { name: p.name, [l.climate]: l.days, source: 'user', updatedAt: Date.now() },
+      { merge: true },
+    );
+  }
+  if (seen.size > 0) await batch.commit();
+}
+
+/** Asks Gemini (via the OCR watcher) how long these keep; returns the request id. */
+export async function requestShelfLife(groupId: string, names: string[]): Promise<string> {
+  const ref = await addDoc(col(groupId, 'shelfLifeRequests'), {
+    status: 'pending',
+    requestedBy: uid(),
+    requestedAt: Date.now(),
+    names: [...new Set(names.map((n) => n.trim()).filter(Boolean))].slice(0, 60),
+  } satisfies ShelfLifeRequest);
+  return ref.id;
+}
+
+/** Stores Gemini's answers as learned, so the same products aren't asked about again. */
+export async function saveShelfLifeAnswers(groupId: string, results: NonNullable<ShelfLifeRequest['results']>): Promise<void> {
+  const options = get(catalogOptions);
+  const learned = get(shelfLifeLearned);
+  const batch = writeBatch(db);
+  for (const r of results.slice(0, 400)) {
+    const p = shelfFor(r.name, options, learned);
+    if (!p.productKey) continue;
+    // A number the group already set itself wins over Gemini's.
+    const own = learned.find((x) => x.id === p.productKey && x.source === 'user');
+    const days = (c: 'room' | 'fridge' | 'freezer') => (own?.[c] ? {} : { [c]: r[c] ?? null });
+    batch.set(
+      doc(col(groupId, 'shelfLife'), p.productKey),
+      { name: p.name, foodType: r.foodType ?? null, ...days('room'), ...days('fridge'), ...days('freezer'), source: own ? 'user' : 'ai', updatedAt: Date.now() },
+      { merge: true },
+    );
+  }
+  await batch.commit();
 }
 
 // ── Purchases (price history) ─────────────────────────────────────────────

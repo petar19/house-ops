@@ -364,6 +364,10 @@ export interface StorageUnit {
   inbox?: boolean;
   // A room's optional floor plan: a rows×cols grid of squares…
   floor?: { rows: number; cols: number } | null;
+  // What it keeps things at, for expiry dates: unset means a chest is a
+  // freezer, a container takes after wherever it sits, anything else is room
+  // temperature (see unitClimate in layout.ts).
+  climate?: 'room' | 'fridge' | 'freezer' | null;
   // …and where a unit in that room stands on it (top-left square, 1-based,
   // and how many squares it takes). Only read while it's in a planned room.
   floorSpot?: FloorSpot | null;
@@ -445,6 +449,33 @@ export interface StorageCatalogEntry {
   priceUnit?: 'kg' | 'l' | 'pcs' | null;
   hidden?: boolean;
   mergedInto?: string | null;
+}
+
+// groups/{groupId}/shelfLife/{productKey} — how long a product keeps, as this
+// group has learned it: dates someone typed or confirmed on import, or one
+// Gemini answer for a product nothing knew (see src/lib/storage/shelfLife.ts).
+// Read before the built-in food-type numbers, so Gemini is asked less and less.
+export interface LearnedShelfLife {
+  id: string; // the product key
+  name: string;
+  foodType?: string | null;
+  room?: number | null;
+  fridge?: number | null;
+  freezer?: number | null;
+  source: 'user' | 'ai';
+  updatedAt: number;
+}
+
+// groups/{groupId}/shelfLifeRequests/{id} — products with no expiry
+// suggestion, for the OCR watcher to ask Gemini about; it writes `results`
+// and sets status 'done' / 'error'. Clients only create these.
+export interface ShelfLifeRequest {
+  status: 'pending' | 'done' | 'error';
+  requestedBy: string;
+  requestedAt: number;
+  names: string[];
+  results?: { name: string; foodType: string | null; room: number | null; fridge: number | null; freezer: number | null }[];
+  error?: string;
 }
 
 // groups/{groupId}/storageCategories/{id} — a group's own categories on top

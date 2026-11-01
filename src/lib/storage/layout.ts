@@ -399,6 +399,26 @@ export function canMerge(a: StorageItem, b: StorageItem): boolean {
     a.qtyMode === 'count' && b.qtyMode === 'count' &&
     a.amount !== null && b.amount !== null &&
     (a.unit ?? '') === (b.unit ?? '') &&
+    // Different dates stay apart, so the older batch is still seen first.
+    (a.expiry ?? '') === (b.expiry ?? '') &&
     !isSpanning(a) && !isSpanning(b)
   );
+}
+
+/**
+ * What a unit keeps things at: its own setting, else a chest is a freezer,
+ * a container is whatever it sits in, a room is room temperature. Null for
+ * Unsorted (it's only a waiting place).
+ */
+export function unitClimate(units: StorageUnit[], unitId: string): 'room' | 'fridge' | 'freezer' | null {
+  let unit = units.find((u) => u.id === unitId);
+  for (let depth = 0; unit && depth < MAX_DEPTH; depth++) {
+    if (unit.inbox) return null;
+    if (unit.climate) return unit.climate;
+    if (unit.kind === 'chest') return 'freezer';
+    if (!unit.movable || !unit.parent) return 'room';
+    const parentId: string = unit.parent.unitId;
+    unit = units.find((u) => u.id === parentId);
+  }
+  return 'room';
 }

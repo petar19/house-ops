@@ -293,6 +293,25 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
+      // How long products keep, as the group has learned it (typed/confirmed
+      // expiry dates, or a Gemini answer saved by the app).
+      match /shelfLife/{productKey} {
+        allow read: if canView(groupId, 'storage');
+        allow write: if canEdit(groupId, 'storage');
+      }
+      // Products with no expiry suggestion, for the OCR watcher (Admin SDK)
+      // to ask Gemini about — clients may only file a request.
+      match /shelfLifeRequests/{requestId} {
+        allow read: if canView(groupId, 'storage');
+        allow create: if canEdit(groupId, 'storage')
+          && request.resource.data.requestedBy == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.names is list
+          && request.resource.data.names.size() > 0
+          && request.resource.data.names.size() <= 60;
+        allow update, delete: if false;
+      }
+
       // What was bought for how much — price history per product. Storage
       // editors record them on import/add and can fix or remove them.
       match /purchases/{purchaseId} {

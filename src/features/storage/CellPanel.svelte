@@ -8,6 +8,8 @@
     addItem,
     catalogOptions,
     convertItemToContainer,
+    learnShelfLife,
+    shelfLifeLearned,
     loadItemHistory,
     moveItems,
     placeUnit,
@@ -34,10 +36,13 @@
     placementOf,
     shapeOf,
     selfAndDescendants,
+    unitClimate,
     unitIcon,
     unitLocationLabel,
     usualPlace,
   } from '../../lib/storage/layout';
+  import { shelfFor } from '../../lib/storage/expirySuggest';
+  import { daysBetween, suggestExpiry } from '../../lib/storage/shelfLife';
   import { describeEvent } from '../../lib/storage/history';
   import { normalizeText } from '../../lib/utils/normalize';
   import { toIso } from '../../lib/utils/date';
@@ -262,6 +267,15 @@
   let addPrice = $state<number | undefined>(undefined);
   let addExpiry = $state('');
   let addMore = $state(false);
+  // Opening 📅 suggests a date for what's typed, kept in this unit's climate.
+  let climate = $derived(unitClimate($storageUnits, unit.id));
+  function toggleExpiry() {
+    addMore = !addMore;
+    if (addMore && !addExpiry && addName.trim()) {
+      const s = suggestExpiry(shelfFor(addName, $catalogOptions, $shelfLifeLearned), toIso(new Date()), climate);
+      if (s) addExpiry = s.date;
+    }
+  }
 
   function onAddPick(option: CatalogOption) {
     addPicked = option;
@@ -290,6 +304,9 @@
     const price = addPrice === undefined || addPrice === null || Number.isNaN(addPrice) ? null : addPrice;
     run(async () => {
       await addItem(groupId, unit.id, cellId, draft, categories, placeOf);
+      if (draft.expiry && climate) {
+        await learnShelfLife(groupId, [{ name, climate, days: daysBetween(toIso(new Date()), draft.expiry) }]).catch(() => {});
+      }
       if (price !== null) {
         await recordPurchases(groupId, [
           {
@@ -595,7 +612,7 @@
         title={$t('import.price')}
         aria-label={$t('import.price')}
       />
-      <button type="button" class="more" onclick={() => (addMore = !addMore)} aria-expanded={addMore} title={$t('storage.field.expiry')}>📅</button>
+      <button type="button" class="more" onclick={toggleExpiry} aria-expanded={addMore} title={$t('storage.field.expiry')}>📅</button>
       <button class="primary" type="submit" disabled={busy || !addName.trim()}>{$t('common.add')}</button>
       {#if addMore || addExpiry}
         <label class="row expiry-in">

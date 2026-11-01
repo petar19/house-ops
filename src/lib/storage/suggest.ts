@@ -2,6 +2,7 @@ import { distance } from 'fastest-levenshtein';
 import { normalizeText } from '../utils/normalize';
 import type { StorageCatalogEntry, StorageItem } from '../types';
 import type { PriceUnit, SystemItem } from './systemCatalog';
+import { builtInFoodType, type FoodType } from './shelfLife';
 
 // One product: a built-in one, a group's own, or a group's version of a
 // built-in one (the group's edits win). `productKey` is what purchases and
@@ -22,6 +23,7 @@ export interface CatalogOption {
   mergedInto: string | null;
   count: number;
   unitIds: string[];
+  foodType: FoodType | null; // built-in; the group's learned one is in shelfLife docs
 }
 
 const DEFAULT_PRICE_UNIT: PriceUnit = 'pcs';
@@ -55,6 +57,7 @@ export function mergeCatalog(
       mergedInto: null,
       count: 0,
       unitIds: [],
+      foodType: builtInFoodType(s.key, s.categories),
     };
     options.set(option.key, option);
     systemByKey.set(s.key, option);
@@ -85,6 +88,7 @@ export function mergeCatalog(
       mergedInto: g.mergedInto ?? null,
       count: g.count,
       unitIds: g.unitIds ?? [],
+      foodType: system?.foodType ?? builtInFoodType(g.id, g.categories),
     });
   }
 

@@ -19,6 +19,12 @@
     packAmount: number | null;
     packUnit: string | null;
     showMore: boolean;
+    // Expiry: suggested from the product (greyed until someone touches it),
+    // typed, or empty. `climate` is where the suggestion assumed it's kept.
+    expiry: string;
+    expiryTouched: boolean;
+    expiryBasis: 'learned' | 'type' | null;
+    climate: 'room' | 'fridge' | 'freezer' | null;
   }
 
   let nextId = 1;
@@ -39,6 +45,10 @@
       packAmount: null,
       packUnit: null,
       showMore: false,
+      expiry: '',
+      expiryTouched: false,
+      expiryBasis: null,
+      climate: null,
       ...over,
     };
   }
@@ -47,8 +57,11 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { t } from '../../lib/i18n';
-  import { catalogOptions } from '../../lib/stores/storage';
+  import { catalogOptions, shelfLifeLearned, storageCatalog, storageUnits } from '../../lib/stores/storage';
   import { parseImportText } from '../../lib/storage/importParse';
+  import { suggestRowExpiry } from '../../lib/storage/expirySuggest';
+  import { parseExpiryInput } from '../../lib/storage/shelfLife';
+  import { toIso } from '../../lib/utils/date';
   import type { CatalogOption } from '../../lib/storage/suggest';
   import ItemNameInput from './ItemNameInput.svelte';
   import QtyFields from './QtyFields.svelte';
@@ -56,7 +69,31 @@
   // A list you type like lines, but each line has the usual autocomplete:
   // Enter in the name jumps to the amount, Enter there starts a new row.
   // Pasting several lines into a name field splits them into rows.
-  let { rows = $bindable(), showInclude = false }: { rows: ImportRow[]; showInclude?: boolean } = $props();
+  let {
+    rows = $bindable(),
+    showInclude = false,
+    date = toIso(new Date()),
+  }: { rows: ImportRow[]; showInclude?: boolean; date?: string } = $props();
+
+  // Every row nobody has dated by hand gets a suggestion, kept up to date as
+  // the name changes (and when the product list or learned numbers load).
+  $effect(() => {
+    for (const row of rows) {
+      if (row.expiryTouched) continue;
+      const s = suggestRowExpiry(row.name, date, $catalogOptions, $shelfLifeLearned, $storageCatalog, $storageUnits);
+      const next = s?.date ?? '';
+      if (row.expiry !== next) row.expiry = next;
+      if (row.expiryBasis !== (s?.basis ?? null)) row.expiryBasis = s?.basis ?? null;
+      if (row.climate !== (s?.climate ?? null)) row.climate = s?.climate ?? null;
+    }
+  });
+
+  function setExpiry(row: ImportRow, value: string) {
+    row.expiry = value;
+    row.expiryTouched = true;
+    row.expiryBasis = null;
+  }
+  const CLIMATE_ICON = { room: '🏠', fridge: '❄️', freezer: '🧊' } as const;
 
   let listEl: HTMLElement;
 
@@ -84,7 +121,13 @@
     if (!/\n/.test(text.trim())) return; // one line: paste normally
     e.preventDefault();
     const parsed = parseImportText(text).map((p) => {
-      const extra = { price: p.price ?? undefined, shop: p.shop ?? '', brand: p.brand ?? '' };
+      const expiry = p.expiry ? parseExpiryInput(p.expiry, date) : null;
+      const extra = {
+        price: p.price ?? undefined,
+        shop: p.shop ?? '',
+        brand: p.brand ?? '',
+        ...(expiry ? { expiry, expiryTouched: true } : {}),
+      };
       return p.level
         ? newRow({ name: p.name, qtyMode: 'level', level: p.level, ...extra })
         : newRow({ name: p.name, amount: p.amount ?? 1, unit: p.unit ?? '', ...extra });
@@ -131,6 +174,22 @@
           aria-label={$t('import.price')}
           title={$t('import.price')}
         />
+        <input
+          class="expiry"
+          class:suggested={!row.expiryTouched && !!row.expiry}
+          type="date"
+          value={row.expiry}
+          onchange={(e) => setExpiry(row, e.currentTarget.value)}
+          aria-label={$t('storage.field.expiry')}
+          title={row.expiryTouched || !row.expiry
+            ? $t('storage.field.expiry')
+            : $t(row.expiryBasis === 'learned' ? 'expiry.suggestedLearned' : 'expiry.suggestedType', {
+                where: $t(`storage.climate.${row.climate ?? 'room'}`),
+              })}
+        />
+        {#if !row.expiryTouched && row.expiry && row.climate}
+          <span class="climate" title={$t(`storage.climate.${row.climate}`)}>{CLIMATE_ICON[row.climate]}</span>
+        {/if}
         <button
           type="button"
           class="more"
@@ -181,6 +240,19 @@
   .price {
     width: 5.5em !important;
     flex: 0 0 auto;
+  }
+  .expiry {
+    width: 9.5em !important;
+    flex: 0 0 auto;
+  }
+  .expiry.suggested {
+    color: var(--text-dim);
+    font-style: italic;
+  }
+  .climate {
+    align-self: center;
+    flex: 0 0 auto;
+    font-size: 0.9em;
   }
   .details {
     flex-wrap: nowrap;

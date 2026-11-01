@@ -80,6 +80,8 @@
   let rows = $state(start?.rows ?? DEFAULT_SHAPES[startKind].rows);
   let cols = $state(start?.cols ?? DEFAULT_SHAPES[startKind].cols);
   let icon = $state<string | null>(start?.icon ?? null);
+  // '' = automatic: a chest is a freezer, a box takes after where it sits.
+  let climate = $state<'' | 'room' | 'fridge' | 'freezer'>(start?.climate ?? '');
   // "Other" units default to being containers; fixed furniture doesn't.
   // svelte-ignore state_referenced_locally
   let movable = $state(start?.movable ?? (startKind === 'custom' || placeInCell));
@@ -177,8 +179,8 @@
     }
     const room = kind === 'room';
     const draft: UnitDraft = room
-      ? { name: name.trim(), kind, ...DEFAULT_SHAPES.room, categories, levelNames: {}, icon, movable: false }
-      : { name: name.trim(), kind, ...shape, categories, levelNames: cleanNames, icon, movable };
+      ? { name: name.trim(), kind, ...DEFAULT_SHAPES.room, categories, levelNames: {}, icon, movable: false, climate: climate || null }
+      : { name: name.trim(), kind, ...shape, categories, levelNames: cleanNames, icon, movable, climate: climate || null };
     const roomPlacement: StoragePlacement | null = !room && roomId ? { unitId: roomId, cellId: ROOM_CELL } : null;
     error = '';
     busy = true;
@@ -336,6 +338,17 @@
   </details>
   {/if}
 
+  <label class="stack field">
+    <span class="muted">{$t('storage.climate')}</span>
+    <select bind:value={climate}>
+      <option value="">{$t('storage.climate.auto', { what: $t(`storage.climate.${kind === 'chest' ? 'freezer' : movable ? 'inherit' : 'room'}`) })}</option>
+      <option value="room">{$t('storage.climate.room')}</option>
+      <option value="fridge">{$t('storage.climate.fridge')}</option>
+      <option value="freezer">{$t('storage.climate.freezer')}</option>
+    </select>
+    <span class="muted hint">{$t('storage.climateHint')}</span>
+  </label>
+
   <div class="stack field">
     <span class="muted">{$t('storage.categories')}</span>
     <span class="muted">{$t('storage.categoriesHint')}</span>
@@ -371,6 +384,9 @@
 <style>
   .field {
     gap: 0.25rem;
+  }
+  .hint {
+    font-size: 0.85em;
   }
   .kinds,
   .chips {

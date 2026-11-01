@@ -10,6 +10,7 @@ export interface ParsedLine {
   price?: number | null; // paid for the whole line
   shop?: string | null;
   brand?: string | null;
+  expiry?: string | null; // as typed: a date or a number of days
 }
 
 const UNIT_ALIASES: Record<string, string> = {
@@ -125,7 +126,7 @@ export function parseImportLine(line: string): ParsedLine | null {
 }
 
 // Column names a header line may use — short or long, English or Croatian.
-type Column = 'item' | 'quantity' | 'unit' | 'price' | 'shop' | 'brand';
+type Column = 'item' | 'quantity' | 'unit' | 'price' | 'shop' | 'brand' | 'expiry';
 const COLUMN_NAMES: Record<string, Column> = {
   i: 'item', item: 'item', name: 'item', product: 'item', stvar: 'item', artikl: 'item', proizvod: 'item', naziv: 'item',
   q: 'quantity', qty: 'quantity', quantity: 'quantity', amount: 'quantity', kol: 'quantity', kolicina: 'quantity',
@@ -133,6 +134,7 @@ const COLUMN_NAMES: Record<string, Column> = {
   p: 'price', price: 'price', cijena: 'price', c: 'price',
   s: 'shop', shop: 'shop', store: 'shop', trgovina: 'shop', ducan: 'shop',
   b: 'brand', brand: 'brand', marka: 'brand',
+  e: 'expiry', exp: 'expiry', expiry: 'expiry', expires: 'expiry', rok: 'expiry', 'rok trajanja': 'expiry',
 };
 
 /** A first line like "i, q, u, p, s" — every field a known column name, one of them the item. */
@@ -165,6 +167,7 @@ function parseWithColumns(line: string, cols: Column[]): ParsedLine | null {
     price: NUMBER.test(price) ? num(price) : null,
     shop: get('shop') || null,
     brand: get('brand') || null,
+    ...(cols.includes('expiry') ? { expiry: get('expiry') || null } : {}),
   };
 }
 
@@ -202,7 +205,9 @@ export function combineDrafts(drafts: ImportDraft[]): ImportDraft[] {
     const key = normalizeText(d.name);
     if (!key) continue;
     const same = out.find(
-      (o) => normalizeText(o.name) === key && o.qtyMode === 'count' && d.qtyMode === 'count' && (o.unit ?? '') === (d.unit ?? ''),
+      (o) =>
+        normalizeText(o.name) === key && o.qtyMode === 'count' && d.qtyMode === 'count' &&
+        (o.unit ?? '') === (d.unit ?? '') && (o.expiry ?? '') === (d.expiry ?? ''),
     );
     if (same) {
       same.amount = (same.amount ?? 0) + (d.amount ?? 0);

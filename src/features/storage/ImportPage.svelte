@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { shelfFor } from '../../lib/storage/expirySuggest';
+  import { daysBetween } from '../../lib/storage/shelfLife';
   import { shrinkPhoto } from '../../lib/utils/image';
   import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
   import { link, push } from 'svelte-spa-router';
@@ -8,7 +10,12 @@
   import {
     importToUnsorted,
     markReceiptImported,
+    catalogOptions,
+    learnShelfLife,
     recordPurchases,
+    requestShelfLife,
+    saveShelfLifeAnswers,
+    shelfLifeLearned,
     requestReceiptItems,
     requestReceiptPhoto,
     requestReceiptText,
@@ -18,7 +25,7 @@
   import { makePlaceOf } from '../../lib/storage/layout';
   import { matchQuality } from '../../lib/storage/suggest';
   import { toIso } from '../../lib/utils/date';
-  import type { DocumentRecord, DocumentVendor, ReceiptItemRequest, ReceiptLineItem, ReceiptTextRequest } from '../../lib/types';
+  import type { DocumentRecord, DocumentVendor, ReceiptItemRequest, ReceiptLineItem, ReceiptTextRequest, ShelfLifeRequest } from '../../lib/types';
   import ImportRows, { newRow, type ImportRow } from './ImportRows.svelte';
 
   // Collect a whole shopping trip into Unsorted in one go — typed/pasted, a
@@ -60,7 +67,7 @@
       amount: r.qtyMode === 'count' ? (r.amount ?? 1) : null,
       unit: r.qtyMode === 'count' ? r.unit.trim() || null : null,
       level: r.qtyMode === 'level' ? r.level : null,
-      expiry: null,
+      expiry: r.expiry || null,
       note: r.raw ? `${billNote}${r.raw}` : '',
       categories: r.categories,
     }));
@@ -90,6 +97,14 @@
           documentId: selectedBill?.id ?? null,
         })),
       );
+      // Dates someone typed or left as suggested are what this group goes by
+      // from now on for those products.
+      await learnShelfLife(
+        groupId,
+        ready
+          .filter((r) => r.expiry && (r.expiryTouched || r.expiryBasis === 'type'))
+          .map((r) => ({ name: r.name, climate: r.climate ?? 'room', days: daysBetween(importDate || toIso(new Date()), r.expiry) })),
+      ).catch(() => {}); // a suggestion not learned is no reason to fail the import
       if (selectedBill) {
         await markReceiptImported(groupId, selectedBill.id, requests.get(selectedBill.id)?.status ?? 'done');
       }
@@ -100,6 +115,41 @@
       busy = false;
     }
   }
+
+  // ── Expiry dates Gemini is asked about ──
+  // Rows with no suggestion that could be food: one request for all of them;
+  // the answers are stored as learned, so the rows fill themselves in and the
+  // same products never need asking again.
+  let undated = $derived(
+    ready.filter((r) => !r.expiry && !r.expiryTouched && !shelfFor(r.name, $catalogOptions, $shelfLifeLearned).nonFood),
+  );
+  let shelfRequestId = $state<string | null>(null);
+  let shelfRequest = $state<ShelfLifeRequest | null>(null);
+  async function askShelfLife() {
+    if (!groupId || undated.length === 0) return;
+    error = '';
+    shelfRequest = null;
+    try {
+      shelfRequestId = await requestShelfLife(groupId, undated.map((r) => r.name));
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+  $effect(() => {
+    const id = shelfRequestId;
+    if (!id || !groupId) return;
+    const gid = groupId;
+    const unsub = onSnapshot(doc(db, 'groups', gid, 'shelfLifeRequests', id), (snap) => {
+      const req = snap.data() as ShelfLifeRequest | undefined;
+      if (!req) return;
+      shelfRequest = req;
+      if (req.status === 'done' && req.results) {
+        saveShelfLifeAnswers(gid, req.results).catch((e) => (error = String(e)));
+        shelfRequestId = null;
+      }
+    });
+    return unsub;
+  });
 
   // ── Bills ──
   const billsGroupId = groupIdFor('photoSaving');
@@ -308,7 +358,7 @@
     {#if mode === 'list'}
       <div class="card stack">
         <p class="muted" style="margin:0">{$t('import.listHint')}</p>
-        <ImportRows bind:rows />
+        <ImportRows bind:rows date={importDate} />
       </div>
     {:else if mode === 'paste'}
       <div class="card stack">
@@ -326,7 +376,7 @@
           {#if pasteSlow}<p class="muted" style="margin:0">{$t('import.readingSlow')}</p>{/if}
         {:else if pasteRequest?.status === 'done'}
           <p class="muted" style="margin:0">{$t('import.billHint', { count: rows.length })}</p>
-          <ImportRows bind:rows showInclude />
+          <ImportRows bind:rows showInclude date={importDate} />
         {/if}
       </div>
     {:else if mode === 'photo'}
@@ -344,7 +394,7 @@
           {#if pasteSlow}<p class="muted" style="margin:0">{$t('import.readingSlow')}</p>{/if}
         {:else if pasteRequest?.status === 'done'}
           <p class="muted" style="margin:0">{$t('import.billHint', { count: rows.length })}</p>
-          <ImportRows bind:rows showInclude />
+          <ImportRows bind:rows showInclude date={importDate} />
         {/if}
       </div>
     {:else if !canUseBills}
@@ -396,7 +446,7 @@
           {#if slow}<p class="muted" style="margin:0">{$t('import.readingSlow')}</p>{/if}
         {:else}
           <p class="muted" style="margin:0">{$t('import.billHint', { count: rows.length })}</p>
-          <ImportRows bind:rows showInclude />
+          <ImportRows bind:rows showInclude date={importDate} />
         {/if}
       </div>
     {/if}
@@ -411,6 +461,20 @@
           <span class="muted">{$t('import.date')}</span>
           <input type="date" bind:value={importDate} />
         </label>
+      </div>
+      <div class="stack expiry-note">
+        <span class="muted">{$t('expiry.importHint')}</span>
+        {#if undated.length > 0}
+          <div class="row">
+            <span class="muted">{$t('expiry.undated', { count: undated.length })}</span>
+            <button onclick={askShelfLife} disabled={!!shelfRequestId}>
+              {shelfRequestId ? `⏳ ${$t('expiry.asking')}` : `✨ ${$t('expiry.askAi')}`}
+            </button>
+          </div>
+        {/if}
+        {#if shelfRequest?.status === 'error'}
+          <span class="muted" style="color: var(--danger)">{shelfRequest.error}</span>
+        {/if}
       </div>
       <div class="row">
         <button class="primary" onclick={addAll} disabled={busy || ready.length === 0}>
