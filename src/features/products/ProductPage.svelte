@@ -169,7 +169,7 @@
     const from = product;
     run(async () => {
       await mergeProducts(groupId, from, target);
-      push(`/storage/products/${encodeURIComponent(target.productKey)}`);
+      push(`/products/${encodeURIComponent(target.productKey)}`);
     });
   }
 
@@ -221,7 +221,7 @@
 </script>
 
 <div class="page stack">
-  <a href="/storage/products" use:link class="muted" style="text-decoration:none">← {$t('products.title')}</a>
+  <a href="/products" use:link class="muted" style="text-decoration:none">← {$t('products.title')}</a>
 
   {#if $myAccess.storage === 'none'}
     <p class="muted">{$t('access.noAccess')}</p>

@@ -15,6 +15,7 @@ export const en: Record<string, string> = {
   'nav.documents': 'Documents',
   'nav.shopping': 'Shopping',
   'nav.storage': 'Storage',
+  'nav.products': 'Products',
   'nav.reminders': 'Reminders',
   'nav.stats': 'Stats',
   'nav.settleUp': 'Settle up',

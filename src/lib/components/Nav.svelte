@@ -43,6 +43,7 @@
       {/if}
       {#if $myAccess.storage !== 'none'}
         <a href="/storage" use:link use:active={'/storage*'}>{$t('nav.storage')}</a>
+        <a href="/products" use:link use:active={'/products*'}>{$t('nav.products')}</a>
       {/if}
       {#if $activeGroup}
         <a href="/settings" use:link use:active>{$t('nav.settings')}</a>

@@ -15,6 +15,7 @@ export const hr: Record<string, string> = {
   'nav.documents': 'Dokumenti',
   'nav.shopping': 'Nabava',
   'nav.storage': 'Spremište',
+  'nav.products': 'Proizvodi',
   'nav.reminders': 'Podsjetnici',
   'nav.stats': 'Statistika',
   'nav.settleUp': 'Razračun',

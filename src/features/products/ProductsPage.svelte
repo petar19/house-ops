@@ -48,7 +48,6 @@
 </script>
 
 <div class="page stack">
-  <a href="/storage" use:link class="muted" style="text-decoration:none">← {$t('storage.title')}</a>
   <h2 style="margin:0">{$t('products.title')}</h2>
 
   {#if $myAccess.storage === 'none'}
@@ -68,7 +67,7 @@
         <p class="muted" style="margin:0">{q.trim() ? $t('storage.noResults') : $t('products.none')}</p>
       {/if}
       {#each shown as s (s.option.productKey)}
-        <a class="product" href="/storage/products/{encodeURIComponent(s.option.productKey)}" use:link>
+        <a class="product" href="/products/{encodeURIComponent(s.option.productKey)}" use:link>
           <span class="row" style="justify-content: space-between; flex-wrap: nowrap">
             <strong>{s.option.name}</strong>
             {#if s.lastPriced?.unitPrice !== null && s.lastPriced?.unitPrice !== undefined}

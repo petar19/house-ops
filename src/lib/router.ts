@@ -12,8 +12,8 @@ import Storage from '../features/storage/Storage.svelte';
 import StorageUnit from '../features/storage/StorageUnit.svelte';
 import StorageHistoryPage from '../features/storage/StorageHistoryPage.svelte';
 import ImportPage from '../features/storage/ImportPage.svelte';
-import ProductsPage from '../features/storage/ProductsPage.svelte';
-import ProductPage from '../features/storage/ProductPage.svelte';
+import ProductsPage from '../features/products/ProductsPage.svelte';
+import ProductPage from '../features/products/ProductPage.svelte';
 
 export const routes = {
   '/': Home,
@@ -25,6 +25,9 @@ export const routes = {
   '/storage': Storage,
   '/storage/history': StorageHistoryPage,
   '/storage/import': ImportPage,
+  '/products': ProductsPage,
+  '/products/:key': ProductPage,
+  // Old links from before Products got its own tab.
   '/storage/products': ProductsPage,
   '/storage/products/:key': ProductPage,
   '/storage/:unitId': StorageUnit,
