@@ -30,6 +30,14 @@ Not tied to a group's capability checklist, since a personal reminder isn't tied
 
 Once you're on WhatsApp, you can also react to a reminder (an ack — doesn't change its schedule) or reply **`postpone N`** to push it out N days. The **Shopping list** capability builds directly on this: a recurring item schedules its own reminder rather than the bot needing to know anything about shopping lists specifically.
 
+## Installing on a phone
+
+It's an installable web app (`public/manifest.webmanifest`, icons in `public/`): in Chrome on Android use *Install app* / *Add to Home screen*, on iPhone Safari's *Share → Add to Home Screen*. `public/sw.js` is the one service worker: it carries the push-notification handlers (imported from `firebase-messaging-sw.js`) and keeps the app's own files on the phone, so it opens without a connection — the page is always fetched fresh when online, built files (hashed names) come from the cache. Firestore data isn't cached across restarts (persistent cache caused stale live updates before, see `src/lib/firebase.ts`), but an open app keeps showing what it loaded and queues changes until it's back online.
+
+## Expiry suggestions
+
+`src/lib/storage/shelfLife.ts` gives each built-in food product a food type (poultry, cheese, bread, frozen…) with typical days at room temperature, in the fridge and in the freezer. Each storage unit has a climate (set in its editor; a chest defaults to freezer, a container takes after where it sits). Import rows and the add form suggest a date for where the product usually goes; dates someone keeps or types are saved per product in `groups/{id}/shelfLife`, and those win next time. Products nothing knows about can be sent to Gemini in one go (*Ask AI* on Import → `shelfLifeRequests`, answered by the OCR watcher) — the answer is saved the same way, so each product is asked about once. Moving an item into a freezer restarts its clock at the freezer time; taking it out shortens it to the fridge/room time.
+
 ## Setup
 
 ```bash

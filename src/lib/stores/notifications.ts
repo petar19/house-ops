@@ -48,9 +48,8 @@ export async function enableNotifications(groupId: string): Promise<void> {
     throw new Error('Notification permission was not granted');
   }
 
-  const registration = await navigator.serviceWorker.register(
-    `${import.meta.env.BASE_URL}firebase-messaging-sw.js`,
-  );
+  // The app's own service worker (public/sw.js) carries the push handlers.
+  const registration = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
   const messaging = getMessaging(app);
   const token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: registration });
 

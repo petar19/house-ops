@@ -1,0 +1,19 @@
+{
+  "name": "HouseOps",
+  "short_name": "HouseOps",
+  "description": "Household expenses, shopping lists, storage and reminders.",
+  "start_url": "/house-ops/",
+  "scope": "/house-ops/",
+  "display": "standalone",
+  "background_color": "#121216",
+  "theme_color": "#4f46e5",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Shopping", "url": "/house-ops/#/shopping", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Storage", "url": "/house-ops/#/storage", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
+  ]
+}

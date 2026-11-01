@@ -21,13 +21,13 @@ messaging.onBackgroundMessage((payload) => {
   const title = payload.notification?.title ?? 'New expense';
   self.registration.showNotification(title, {
     body: payload.notification?.body,
-    icon: '/expense-tracker/favicon.svg',
+    icon: '/house-ops/icon-192.png',
     data: payload.data,
   });
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = event.notification.data?.url ?? '/expense-tracker/';
+  const url = event.notification.data?.url ?? '/house-ops/';
   event.waitUntil(self.clients.openWindow(url));
 });
