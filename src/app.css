@@ -10,11 +10,14 @@
   --success: #16a34a;
   --radius: 10px;
   --font: system-ui, 'Segoe UI', Roboto, sans-serif;
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
+/* Dark: the device's setting unless one is picked in the nav (ThemePicker
+   sets data-theme on <html>; an inline script in index.html applies the
+   saved choice before first paint). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #121216;
     --surface: #1c1c22;
     --border: #2e2e36;
@@ -22,7 +25,18 @@
     --text-dim: #9a9aa5;
     --accent: #818cf8;
     --accent-text: #12121a;
+    color-scheme: dark;
   }
+}
+:root[data-theme='dark'] {
+  --bg: #121216;
+  --surface: #1c1c22;
+  --border: #2e2e36;
+  --text: #f0f0f3;
+  --text-dim: #9a9aa5;
+  --accent: #818cf8;
+  --accent-text: #12121a;
+  color-scheme: dark;
 }
 
 * {

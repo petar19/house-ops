@@ -10,6 +10,9 @@ export const en: Record<string, string> = {
   'common.remove': 'Remove',
   'common.loading': 'Loading…',
 
+  'theme.auto': 'Theme: like the device (tap for light)',
+  'theme.light': 'Theme: light (tap for dark)',
+  'theme.dark': 'Theme: dark (tap to follow the device)',
   'nav.expenses': 'Expenses',
   'nav.settings': 'Settings',
   'nav.documents': 'Documents',

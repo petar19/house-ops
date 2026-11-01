@@ -5,6 +5,7 @@
   import { activeGroup, myAccess } from '../stores/groups';
   import { t } from '../i18n';
   import LanguagePicker from './LanguagePicker.svelte';
+  import ThemePicker from './ThemePicker.svelte';
   import GroupSwitcher from './GroupSwitcher.svelte';
   import Modal from './Modal.svelte';
   import AdminPanel from '../../features/admin/AdminPanel.svelte';
@@ -18,6 +19,7 @@
       <a href="/" use:link class="brand">🏠 HouseOps</a>
       <div class="row user">
         <LanguagePicker />
+        <ThemePicker />
         {#if $allowedRole === 'admin'}
           <button onclick={() => (adminOpen = true)} title={$t('nav.admin')} aria-label={$t('nav.admin')}>⚙️</button>
         {/if}

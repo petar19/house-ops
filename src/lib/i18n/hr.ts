@@ -10,6 +10,9 @@ export const hr: Record<string, string> = {
   'common.remove': 'Ukloni',
   'common.loading': 'Učitavanje…',
 
+  'theme.auto': 'Tema: kao uređaj (dodirni za svijetlu)',
+  'theme.light': 'Tema: svijetla (dodirni za tamnu)',
+  'theme.dark': 'Tema: tamna (dodirni za temu uređaja)',
   'nav.expenses': 'Troškovi',
   'nav.settings': 'Postavke',
   'nav.documents': 'Dokumenti',
