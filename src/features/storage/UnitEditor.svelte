@@ -19,7 +19,7 @@
     MAX_LEVELS,
     MAX_ROWS,
     ROOM_CELL,
-    UNIT_ICONS,
+    ICON_GROUPS,
     isRoom,
     roomOf,
     shapeOf,
@@ -246,10 +246,18 @@
     </label>
   </div>
   {#if showIcons}
-    <div class="icons">
-      <button type="button" class:on={!icon} onclick={() => ((icon = null), (showIcons = false))}>{KIND_ICONS[kind]}</button>
-      {#each UNIT_ICONS as e (e)}
-        <button type="button" class:on={icon === e} onclick={() => ((icon = e), (showIcons = false))}>{e}</button>
+    <div class="stack icon-groups">
+      <div class="icons">
+        <button type="button" class:on={!icon} onclick={() => ((icon = null), (showIcons = false))} title={$t('storage.iconDefault')}>{KIND_ICONS[kind]}</button>
+      </div>
+      <!-- Rooms first when it's a room, furniture first for anything else. -->
+      {#each kind === 'room' ? ICON_GROUPS : [...ICON_GROUPS.slice(1, 2), ICON_GROUPS[0], ...ICON_GROUPS.slice(2)] as g (g.id)}
+        <span class="muted group-label">{$t(`storage.iconGroup.${g.id}`)}</span>
+        <div class="icons">
+          {#each g.icons as e (e)}
+            <button type="button" class:on={icon === e} onclick={() => ((icon = e), (showIcons = false))}>{e}</button>
+          {/each}
+        </div>
       {/each}
     </div>
   {/if}
@@ -387,6 +395,14 @@
   }
   .hint {
     font-size: 0.85em;
+  }
+  .icon-groups {
+    gap: 0.3rem;
+    max-height: 20rem;
+    overflow-y: auto;
+  }
+  .group-label {
+    font-size: 0.8em;
   }
   .kinds,
   .chips {

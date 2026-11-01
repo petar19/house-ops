@@ -323,12 +323,15 @@ export function unitIcon(unit: Pick<StorageUnit, 'kind' | 'icon'>): string {
 
 // Picked from in the unit editor. Emoji has no coloured boxes, so the
 // coloured squares/circles serve as "the red one", "the blue one" markers.
-export const UNIT_ICONS = [
-  '📦', '🗃️', '🗄️', '🧰', '🧳', '💼', '👜', '👝', '🛍️', '🎒', '🧺', '🪣',
-  '🫙', '🥡', '🧊', '🍱', '🧵', '🔧', '🔌', '💊', '🎄', '🧸', '👟', '📚',
-  '🟥', '🟧', '🟨', '🟩', '🟦', '🟪', '🟫', '⬛', '⬜',
-  '🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '🟤', '⚫', '⚪',
+// Icons to pick for a room, a piece of furniture or a box, by group.
+export const ICON_GROUPS: { id: string; icons: string[] }[] = [
+  { id: 'rooms', icons: ['🚪', '🏠', '🛋️', '🛏️', '🍳', '🍽️', '🛁', '🚿', '🚽', '🧺', '🚗', '🏚️', '🪜', '🍷', '💻', '🧸', '🎮', '🌳', '🌿', '🏡', '⛺'] },
+  { id: 'furniture', icons: ['🗄️', '🗃️', '🪑', '💺', '🖥️', '📺', '🪞', '🪟', '🛒', '🧊', '🗑️', '🛠️', '🧹', '🪴', '🕰️', '📚', '🎹', '🧯'] },
+  { id: 'containers', icons: ['📦', '🧰', '🧳', '💼', '👜', '👝', '🛍️', '🎒', '🧺', '🪣', '🫙', '🥡', '🍱', '🗂️', '📁', '🎁', '🧴', '🥫'] },
+  { id: 'things', icons: ['🔧', '🔨', '🪛', '🔌', '🔋', '💡', '🎨', '🧵', '🧶', '💊', '🩹', '🧻', '🍼', '🐾', '🎄', '👟', '👕', '🧦', '🥾', '⚽', '🚲', '🛞', '🎣', '🏕️', '🍾', '🧂', '📷', '🎧', '💾'] },
+  { id: 'colors', icons: ['🟥', '🟧', '🟨', '🟩', '🟦', '🟪', '🟫', '⬛', '⬜', '🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '🟤', '⚫', '⚪'] },
 ];
+export const UNIT_ICONS = [...new Set(ICON_GROUPS.flatMap((g) => g.icons))];
 
 export function formatQty(item: Pick<StorageItem, 'qtyMode' | 'amount' | 'unit' | 'level'>, t: Translate): string {
   if (item.qtyMode === 'level') return t(`storage.qty.${item.level ?? 'some'}`);
