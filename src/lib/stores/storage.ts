@@ -762,8 +762,24 @@ function guessPriceUnit(unit: string | null, packUnit: string | null): PriceUnit
   return 'pcs';
 }
 
+// Purchases only ever grow, so they're read once per visit and after that
+// only the ones added since (createdAt above the newest seen) — opening
+// Products, a product page and Stats one after another costs one full read,
+// not three. Merges rewrite productKeys, so they start over.
+let purchaseCache: { groupId: string; list: Purchase[]; newest: number } | null = null;
+
+function forgetPurchases(): void {
+  purchaseCache = null;
+}
+
 /** Every purchase of one product (and anything merged into it), newest first. */
 export async function loadPurchases(groupId: string, productKeys: string[]): Promise<Purchase[]> {
+  if (purchaseCache?.groupId === groupId) {
+    const keys = new Set(productKeys);
+    return (await loadAllPurchases(groupId))
+      .filter((p) => keys.has(p.productKey))
+      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+  }
   const snaps = await Promise.all(
     productKeys.map((k) => getDocs(query(col(groupId, 'purchases'), where('productKey', '==', k)))),
   );
@@ -774,12 +790,23 @@ export async function loadPurchases(groupId: string, productKeys: string[]): Pro
 
 /** All purchases, for the Products list's "last bought / last price". */
 export async function loadAllPurchases(groupId: string): Promise<Purchase[]> {
-  const snap = await getDocs(col(groupId, 'purchases'));
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Purchase, 'id'>) }));
+  const toPurchase = (d: { id: string; data: () => unknown }) => ({ id: d.id, ...(d.data() as Omit<Purchase, 'id'>) });
+  if (purchaseCache?.groupId === groupId) {
+    const cache = purchaseCache;
+    const snap = await getDocs(query(col(groupId, 'purchases'), where('createdAt', '>', cache.newest)));
+    const added = snap.docs.map(toPurchase).filter((p) => !cache.list.some((x) => x.id === p.id));
+    cache.list = [...cache.list, ...added];
+    cache.newest = Math.max(cache.newest, ...added.map((p) => p.createdAt));
+    return [...cache.list];
+  }
+  const list = (await getDocs(col(groupId, 'purchases'))).docs.map(toPurchase);
+  purchaseCache = { groupId, list, newest: Math.max(0, ...list.map((p) => p.createdAt)) };
+  return [...list];
 }
 
 export async function deletePurchase(groupId: string, id: string): Promise<void> {
   await deleteDoc(doc(col(groupId, 'purchases'), id));
+  if (purchaseCache?.groupId === groupId) purchaseCache.list = purchaseCache.list.filter((p) => p.id !== id);
 }
 
 // ── Products page edits ───────────────────────────────────────────────────
@@ -825,6 +852,7 @@ export async function updateProduct(groupId: string, option: CatalogOption, patc
  * any spelling of it now resolves there. Storage items keep their own names.
  */
 export async function mergeProducts(groupId: string, from: CatalogOption, into: CatalogOption): Promise<void> {
+  forgetPurchases();
   const aliases = [...new Set([...into.aliases, from.name, ...from.altNames, ...from.aliases])].filter(
     (n) => normalizeText(n) !== normalizeText(into.name),
   );

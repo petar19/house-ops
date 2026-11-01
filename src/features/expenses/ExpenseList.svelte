@@ -65,8 +65,12 @@
   let from = $state(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   let to = $state(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
 
+  // Only as far back as needed: an older month widens the live range to that
+  // month (not the whole history); clearing the dates loads everything.
   $effect(() => {
-    if ($expensesRangeStart && (!from || from < $expensesRangeStart)) loadFullExpenseHistory();
+    if (!$expensesRangeStart) return;
+    if (!from) loadFullExpenseHistory();
+    else if (from < $expensesRangeStart) expensesRangeStart.set(from);
   });
 
   let shown = $derived(filterExpenses($expenses, { from: from || undefined, to: to || undefined }));

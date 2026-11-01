@@ -45,6 +45,7 @@ export function loadFullExpenseHistory(): void {
 let unsubExpenses: (() => void) | null = null;
 let unsubKnownNames: (() => void) | null = null;
 let lastGroupId: string | null = null;
+let knownNamesGroupId: string | null = null;
 
 const expensesGroupId = groupIdFor('expenses');
 
@@ -71,9 +72,12 @@ expensesSubscriptionKey.subscribe(() => {
     unsubExpenses();
     unsubExpenses = null;
   }
-  if (unsubKnownNames) {
+  // Name suggestions don't depend on the date range — only re-read them when
+  // the group changes, not every time the expense window widens.
+  if (unsubKnownNames && knownNamesGroupId !== groupId) {
     unsubKnownNames();
     unsubKnownNames = null;
+    knownNamesGroupId = null;
   }
 
   if (!groupId) {
@@ -104,11 +108,14 @@ expensesSubscriptionKey.subscribe(() => {
     },
   );
 
-  unsubKnownNames = onSnapshot(collection(db, 'groups', groupId, 'knownNames'), (snap) => {
-    knownNames.set(
-      snap.docs.map((d) => ({ name: d.id, ...(d.data() as Omit<KnownName, 'name'>) })),
-    );
-  });
+  if (!unsubKnownNames) {
+    knownNamesGroupId = groupId;
+    unsubKnownNames = onSnapshot(collection(db, 'groups', groupId, 'knownNames'), (snap) => {
+      knownNames.set(
+        snap.docs.map((d) => ({ name: d.id, ...(d.data() as Omit<KnownName, 'name'>) })),
+      );
+    });
+  }
 });
 
 /** One-time (non-live) fetch of a group's full expense history — used where

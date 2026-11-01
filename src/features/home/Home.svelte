@@ -1,3 +1,11 @@
+<script lang="ts" module>
+  import type { Reminder as R } from '../../lib/types';
+  // Reminders are fetched, not kept live — and coming back to the home page
+  // within a few minutes reuses them instead of reading them again.
+  const REMINDER_TTL = 5 * 60_000;
+  let reminderCache: { key: string; at: number; list: R[] } | null = null;
+</script>
+
 <script lang="ts">
   import { link } from 'svelte-spa-router';
   import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -57,6 +65,11 @@
     const uid = $currentUser?.uid;
     const gid = group?.id;
     if (!uid) return;
+    const key = `${uid}|${gid ?? ''}`;
+    if (reminderCache?.key === key && Date.now() - reminderCache.at < REMINDER_TTL) {
+      reminders = reminderCache.list;
+      return;
+    }
     const soon = `${toIso(new Date(Date.now() + 2 * 86_400_000))}T23:59`;
     Promise.all([
       getDocs(query(collection(db, 'reminders'), where('ownerUid', '==', uid))),
@@ -69,6 +82,7 @@
           .filter((r, i, arr) => arr.findIndex((x) => x.id === r.id) === i)
           .sort((a, b) => a.nextTriggerAt.localeCompare(b.nextTriggerAt))
           .slice(0, 6);
+        reminderCache = { key, at: Date.now(), list: reminders };
       })
       .catch(() => (reminders = []));
   });
