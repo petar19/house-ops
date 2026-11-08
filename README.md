@@ -32,7 +32,7 @@ Once you're on WhatsApp, you can also react to a reminder (an ack — doesn't ch
 
 ## Installing on a phone
 
-It's an installable web app (`public/manifest.webmanifest`, icons in `public/`): in Chrome on Android use *Install app* / *Add to Home screen*, on iPhone Safari's *Share → Add to Home Screen*. `public/sw.js` is the one service worker: it carries the push-notification handlers (imported from `firebase-messaging-sw.js`) and keeps the app's own files on the phone, so it opens without a connection — the page is always fetched fresh when online, built files (hashed names) come from the cache. Firestore data isn't cached across restarts (persistent cache caused stale live updates before, see `src/lib/firebase.ts`), but an open app keeps showing what it loaded and queues changes until it's back online.
+It's an installable web app (`public/manifest.webmanifest`, icons in `public/`): in Chrome on Android use *Install app* / *Add to Home screen*, on iPhone Safari's *Share → Add to Home Screen*. `public/sw.js` is the service worker: it keeps the app's own files on the phone, so it opens without a connection — the page is always fetched fresh when online, built files (hashed names) come from the cache. Firestore data isn't cached across restarts (persistent cache caused stale live updates before, see `src/lib/firebase.ts`), but an open app keeps showing what it loaded and queues changes until it's back online.
 
 ## Expiry suggestions
 

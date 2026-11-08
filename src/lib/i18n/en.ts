@@ -101,7 +101,7 @@ export const en: Record<string, string> = {
   'whatsappBridge.unmappedSenders': 'WhatsApp senders needing a mapping',
   'whatsappBridge.mappedSenders': 'Mapped senders',
   'whatsappBridge.templateLabel': 'Announcement message template',
-  'whatsappBridge.templateHint': "Variables: {sender}, {date}, {name}, {description}, {price}, {itemCount}. Leave blank to use the default.",
+  'whatsappBridge.templateHint': "Variables: {sender}, {date}, {name}, {description}, {price}, {itemCount}, {link} (opens Expenses in the app). Leave blank to use the default.",
   'whatsappBridge.templateSaved': 'Saved',
   'whatsappBridge.notLinked': 'This group is not linked to a WhatsApp group yet.',
   'whatsappBridge.noGroupsDiscovered': 'The bot hasn\'t discovered any WhatsApp groups yet. Make sure it\'s online and a member of the group you want to link.',
@@ -282,12 +282,6 @@ export const en: Record<string, string> = {
 
   'language.label': 'Language',
 
-  'notifications.title': 'Notifications',
-  'notifications.description': 'Get a push notification when someone else adds an expense to this group.',
-  'notifications.enable': 'Enable notifications',
-  'notifications.disable': 'Disable notifications',
-  'notifications.enabling': 'Enabling…',
-  'notifications.enableFailed': 'Failed to enable: {error}',
 
   'reminders.title': 'Reminders',
   'reminders.description': 'Delivered as a WhatsApp message — personal ones DM you directly, group ones post to that group\'s linked chat.',

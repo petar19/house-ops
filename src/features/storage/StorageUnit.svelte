@@ -1,7 +1,7 @@
 <script lang="ts">
   import { link, push, router } from 'svelte-spa-router';
   import { t } from '../../lib/i18n';
-  import { activeGroupId, activeGroupResolvedId, myAccess, myGroups, myGroupsLoading } from '../../lib/stores/groups';
+  import { activeGroupResolvedId, myAccess, myGroups, myGroupsLoading } from '../../lib/stores/groups';
   import { catalogOptions, moveItems, placeUnit, storageItems, storageLoading, storageUnits } from '../../lib/stores/storage';
   import { activeGroup } from '../../lib/stores/groups';
   import {
@@ -45,15 +45,10 @@
   let sharing = $state(false);
   let shareCell = $state<string | null>(null);
 
-  // Shared links (and QR/NFC labels) carry ?group= so they open in the right
-  // group even if you were last looking at another one.
+  // Shared links (and QR/NFC labels) carry ?group=; App.svelte switches to
+  // it. Someone outside that group gets told so here.
   let linkGroup = $derived(new URLSearchParams(router.querystring ?? '').get('group'));
   let notInLinkGroup = $derived(!!linkGroup && !$myGroupsLoading && !$myGroups.some((g) => g.id === linkGroup));
-  $effect(() => {
-    if (linkGroup && $myGroups.some((g) => g.id === linkGroup) && $activeGroupResolvedId !== linkGroup) {
-      activeGroupId.set(linkGroup);
-    }
-  });
 
   // Going from one unit straight to another (opening a container, a history
   // entry elsewhere) reuses this page — start fresh for the new unit.

@@ -166,15 +166,6 @@ service cloud.firestore {
         allow read, write: if isGroupMember() && isSiteAdmin();
       }
 
-      // Kept separate from the `members` map specifically so this rule can
-      // scope "only your own doc" without needing to diff one nested key
-      // inside a field shared with role/expectedPct/etc.
-      // These are expense announcements, so they follow expenses access.
-      match /notificationPrefs/{uid} {
-        allow read: if canView(groupId, 'expenses');
-        allow write: if canView(groupId, 'expenses') && request.auth.uid == uid;
-      }
-
       // Written only by the OCR watcher (Admin SDK, bypasses rules) — the
       // Documents tab's lightweight per-receipt summaries (no full OCR text;
       // that stays local-only) and the per-vendor aggregate counts that let

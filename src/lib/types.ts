@@ -14,14 +14,6 @@ export interface GroupMember {
   access?: Partial<Record<GroupFeature, AccessLevel>>;
 }
 
-// groups/{groupId}/notificationPrefs/{uid} — kept out of the shared `members`
-// map so the security rule can cleanly scope "you may only touch your own
-// preference" without needing to diff one nested key inside a shared field.
-export interface NotificationPref {
-  uid: string;
-  enabled: boolean;
-}
-
 // Cheap booleans purely deciding which tabs/sections show for this group —
 // the actual config for an enabled capability lives in its own collection
 // (whatsappIntegrations, photoSavingConfig below), same pattern either way,

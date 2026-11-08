@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { link, push } from 'svelte-spa-router';
+  import { link, push, router } from 'svelte-spa-router';
   import { t } from '../../lib/i18n';
   import { activeGroup, myAccess } from '../../lib/stores/groups';
   import { catalogOptions, storageItems, storageLoading, storageUnits } from '../../lib/stores/storage';
@@ -12,7 +12,8 @@
   import UnitCard from './UnitCard.svelte';
   import UseSoon from './UseSoon.svelte';
 
-  let q = $state('');
+  // ?q= (a link from the bot's ?where) starts with that search.
+  let q = $state(new URLSearchParams(router.querystring ?? '').get('q') ?? '');
   let creating = $state<StorageUnitKind | null>(null);
 
   const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);

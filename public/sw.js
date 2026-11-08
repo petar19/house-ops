@@ -1,10 +1,8 @@
-// The app's one service worker (scope /house-ops/): push notifications (the
-// Firebase Messaging handlers, imported below) plus keeping the app itself
-// on the phone, so the installed app opens without a connection — e.g. the
+// The app's service worker (scope /house-ops/): keeps the app itself on the
+// phone, so the installed app opens without a connection — e.g. the
 // shopping list in a shop with bad signal. Data still comes from Firestore,
 // which keeps working on what's already loaded and sends writes once back
 // online; this only caches the app's own files, never API traffic.
-importScripts('firebase-messaging-sw.js');
 
 const CACHE = 'houseops-shell-v1';
 const MAX_ASSETS = 80;

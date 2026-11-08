@@ -41,8 +41,7 @@ export const activeGroup = derived([myGroups, activeGroupId], ([$groups, $id]) =
 // when the resolved group's identity hasn't actually changed (e.g. any write
 // to any group doc fires the listener twice — once optimistic, once
 // server-confirmed). Anything that tears down/rebuilds Firestore listeners
-// based on "did the active group change" (expenses, nameAliases,
-// notifications) must key off this instead, or it re-reads on every no-op.
+// based on "did the active group change" (expenses, nameAliases) must key off this instead, or it re-reads on every no-op.
 export const activeGroupResolvedId = derived(activeGroup, (g) => g?.id ?? null);
 
 /** What the signed-in user may do with each feature of the active group. */

@@ -101,7 +101,7 @@ export const hr: Record<string, string> = {
   'whatsappBridge.unmappedSenders': 'WhatsApp pošiljatelji koje treba povezati',
   'whatsappBridge.mappedSenders': 'Povezani pošiljatelji',
   'whatsappBridge.templateLabel': 'Predložak poruke za objavu',
-  'whatsappBridge.templateHint': 'Varijable: {sender}, {date}, {name}, {description}, {price}, {itemCount}. Ostavi prazno za zadani predložak.',
+  'whatsappBridge.templateHint': 'Varijable: {sender}, {date}, {name}, {description}, {price}, {itemCount}, {link} (otvara Troškove u aplikaciji). Ostavi prazno za zadani predložak.',
   'whatsappBridge.templateSaved': 'Spremljeno',
   'whatsappBridge.notLinked': 'Ova grupa još nije povezana s WhatsApp grupom.',
   'whatsappBridge.noGroupsDiscovered': 'Bot još nije pronašao nijednu WhatsApp grupu. Provjeri je li online i je li član grupe koju želiš povezati.',
@@ -282,12 +282,6 @@ export const hr: Record<string, string> = {
 
   'language.label': 'Jezik',
 
-  'notifications.title': 'Obavijesti',
-  'notifications.description': 'Primaj push obavijest kad netko drugi doda trošak u ovu grupu.',
-  'notifications.enable': 'Uključi obavijesti',
-  'notifications.disable': 'Isključi obavijesti',
-  'notifications.enabling': 'Uključivanje…',
-  'notifications.enableFailed': 'Uključivanje nije uspjelo: {error}',
 
   'reminders.title': 'Podsjetnici',
   'reminders.description': 'Stiže kao WhatsApp poruka — osobni podsjetnici stižu direktno tebi, grupni na povezani chat te grupe.',
