@@ -33,6 +33,7 @@
   let current: Built | null = null;
   let framedKey: string | null = null;
   let lastSize: [number, number, number] = [1, 1, 1];
+  let lastCenter: [number, number, number] = [0, 0, 0];
 
   function render() {
     if (!renderer || !scene || !camera) return;
@@ -40,9 +41,10 @@
     labelRenderer?.render(scene, camera);
   }
 
-  function frame(size: [number, number, number]) {
+  function frame(size: [number, number, number], center: [number, number, number] = [0, 0, 0]) {
     if (!camera || !controls) return;
     lastSize = size;
+    lastCenter = center;
     const [W, H, D] = size;
     const radius = 0.5 * Math.hypot(W, H, D);
     // Fit both ways: on a narrow phone screen the width is what limits.
@@ -50,7 +52,7 @@
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
     const distance = Math.max((radius / Math.sin(vfov / 2)) * 0.85, radius / Math.sin(hfov / 2));
     const dir = new THREE.Vector3(0.45, 0.55, 1).normalize();
-    controls.target.set(0, H / 2, 0);
+    controls.target.set(center[0], H / 2, center[2]);
     camera.position.copy(dir.multiplyScalar(distance).add(controls.target));
     controls.minDistance = radius * 0.5;
     controls.maxDistance = distance * 3;
@@ -61,7 +63,7 @@
   }
 
   export function resetView() {
-    frame(lastSize);
+    frame(lastSize, lastCenter);
     render();
   }
 
@@ -81,7 +83,7 @@
     }
     if (framedKey !== viewKey) {
       framedKey = viewKey;
-      frame(current.size);
+      frame(current.size, current.center);
     }
     render();
   }

@@ -134,6 +134,7 @@ export interface UnitDraft {
   cols: number;
   categories: string[];
   levelNames: Record<string, string>;
+  doorShelves?: number | null;
   icon: string | null;
   movable: boolean;
   climate?: StorageUnit['climate'];

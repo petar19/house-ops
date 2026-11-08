@@ -13,7 +13,9 @@
     type UnitDraft,
   } from '../../lib/stores/storage';
   import {
+    DEFAULT_DOOR_SHELVES,
     DEFAULT_SHAPES,
+    doorShelfCount,
     KIND_ICONS,
     MAX_COLS,
     MAX_LEVELS,
@@ -23,6 +25,7 @@
     isRoom,
     roomOf,
     shapeOf,
+    coveredOf,
     fullPlaceLabel,
     levelLabel,
     makePlaceOf,
@@ -70,17 +73,23 @@
   const KINDS: StorageUnitKind[] = start
     ? start.kind === 'room'
       ? ['room']
-      : ['shelving', 'chest', 'drawers', 'custom']
+      : ['shelving', 'fridge', 'chest', 'drawers', 'custom']
     : placeIn
-      ? ['shelving', 'chest', 'drawers', 'custom']
-      : ['room', 'shelving', 'chest', 'drawers', 'custom'];
+      ? ['shelving', 'fridge', 'chest', 'drawers', 'custom']
+      : ['room', 'shelving', 'fridge', 'chest', 'drawers', 'custom'];
   let name = $state(start?.name ?? '');
   let kind = $state<StorageUnitKind>(startKind);
-  let levels = $state(start?.levels ?? DEFAULT_SHAPES[startKind].levels);
+  // For a fridge `levels` here is just the shelves inside; the door ones are
+  // counted apart and stored as the last levels (see doorShelfCount).
+  // svelte-ignore state_referenced_locally
+  let doorShelves = $state(start ? doorShelfCount(start) : startKind === 'fridge' ? DEFAULT_DOOR_SHELVES : 0);
+  // svelte-ignore state_referenced_locally
+  let levels = $state((start?.levels ?? DEFAULT_SHAPES[startKind].levels) - doorShelves);
   let rows = $state(start?.rows ?? DEFAULT_SHAPES[startKind].rows);
   let cols = $state(start?.cols ?? DEFAULT_SHAPES[startKind].cols);
   let icon = $state<string | null>(start?.icon ?? null);
-  // '' = automatic: a chest is a freezer, a box takes after where it sits.
+  // '' = automatic: a chest is a freezer, a fridge a fridge, a box takes
+  // after where it sits.
   let climate = $state<'' | 'room' | 'fridge' | 'freezer'>(start?.climate ?? '');
   // "Other" units default to being containers; fixed furniture doesn't.
   // svelte-ignore state_referenced_locally
@@ -108,8 +117,17 @@
   // A fresh unit follows the kind's default shape when the kind changes;
   // an existing one keeps its numbers (its items already live in them).
   function pickKind(k: StorageUnitKind) {
+    if (unit) {
+      // Same levels either way: a fridge's door shelves become plain ones.
+      if (kind === 'fridge' && k !== 'fridge') levels += doorShelves;
+      if (k === 'fridge' && kind !== 'fridge') doorShelves = 0;
+    }
     kind = k;
-    if (!unit) ({ levels, rows, cols } = DEFAULT_SHAPES[k]);
+    if (!unit) {
+      ({ levels, rows, cols } = DEFAULT_SHAPES[k]);
+      doorShelves = k === 'fridge' ? DEFAULT_DOOR_SHELVES : 0;
+      levels -= doorShelves;
+    }
     if (!unit && !movableTouched && !placeInCell) movable = k === 'custom';
     if (k === 'custom') {
       rows = 1;
@@ -118,8 +136,24 @@
   }
 
   const clamp = (n: number, max: number) => Math.min(Math.max(Math.round(Number(n) || 1), 1), max);
-  let shape = $derived({ levels: clamp(levels, MAX_LEVELS), rows: clamp(rows, MAX_ROWS), cols: clamp(cols, MAX_COLS) });
-  let preview = $derived({ name, kind, ...shape, levelNames, cellNames: unit?.cellNames ?? {} });
+  let door = $derived(kind === 'fridge' ? Math.min(Math.max(Math.round(Number(doorShelves) || 0), 0), MAX_LEVELS - 1) : 0);
+  let shape = $derived({ levels: clamp(clamp(levels, MAX_LEVELS) + door, MAX_LEVELS), rows: clamp(rows, MAX_ROWS), cols: clamp(cols, MAX_COLS) });
+  let preview = $derived({ name, kind, ...shape, levelNames, doorShelves: door, cellNames: unit?.cellNames ?? {} });
+  // Door shelves are the last levels, so a different number of shelves
+  // inside renumbers them. Their names follow along on save; things on them
+  // would land on the wrong shelf, so that waits until they're moved off.
+  // svelte-ignore state_referenced_locally
+  const insideBefore = start?.kind === 'fridge' ? start.levels - doorShelfCount(start) : null;
+  let insideShift = $derived(insideBefore !== null && kind === 'fridge' ? shape.levels - door - insideBefore : 0);
+  let onDoorBefore = $derived.by(() => {
+    if (!unit || insideBefore === null) return 0;
+    const onDoor = (cells: string[]) => cells.some((id) => Number(id.split('.')[0]) > insideBefore);
+    return (
+      unitItems.filter((i) => onDoor(coveredOf(i))).length +
+      $storageUnits.filter((u) => u.parent?.unitId === unit!.id && onDoor(coveredOf(u.parent))).length
+    );
+  });
+  let doorBlocked = $derived(insideShift !== 0 && onDoorBefore > 0);
   let orphans = $derived([
     ...orphanedItems(shape, unitItems),
     ...(unit ? orphanedContainers(shape, $storageUnits, unit.id) : []),
@@ -171,16 +205,29 @@
       error = $t('storage.shrinkBlocked', { count: orphans.length });
       return;
     }
+    if (doorBlocked) {
+      error = $t('storage.doorShiftBlocked', { count: onDoorBefore });
+      return;
+    }
+    // A door shelf keeps its name when the shelves inside change in number.
+    const shifted = (level: number) => (insideBefore !== null && level > insideBefore ? level + insideShift : level);
     // Only keep names for levels that still exist and aren't blank.
     const cleanNames: Record<string, string> = {};
-    for (let l = 1; l <= shape.levels; l++) {
-      const v = levelNames[String(l)]?.trim();
-      if (v) cleanNames[String(l)] = v;
+    for (const [l, name] of Object.entries(levelNames)) {
+      const v = name?.trim();
+      const to = insideShift ? shifted(Number(l)) : Number(l);
+      if (v && to >= 1 && to <= shape.levels) cleanNames[String(to)] = v;
     }
+    const cellNames = insideShift && unit
+      ? Object.fromEntries(Object.entries(unit.cellNames ?? {}).map(([id, v]) => {
+          const [l, ...rest] = id.split('.');
+          return [[shifted(Number(l)), ...rest].join('.'), v];
+        }))
+      : null;
     const room = kind === 'room';
     const draft: UnitDraft = room
       ? { name: name.trim(), kind, ...DEFAULT_SHAPES.room, categories, levelNames: {}, icon, movable: false, climate: climate || null }
-      : { name: name.trim(), kind, ...shape, categories, levelNames: cleanNames, icon, movable, climate: climate || null };
+      : { name: name.trim(), kind, ...shape, doorShelves: kind === 'fridge' ? door : null, categories, levelNames: cleanNames, icon, movable, climate: climate || null };
     const roomPlacement: StoragePlacement | null = !room && roomId ? { unitId: roomId, cellId: ROOM_CELL } : null;
     error = '';
     busy = true;
@@ -190,7 +237,7 @@
           // No longer a container: it can't stay in another unit's cell.
           await updateUnit(groupId, unit.id, { ...draft, parent: null });
         } else {
-          await updateUnit(groupId, unit.id, draft);
+          await updateUnit(groupId, unit.id, cellNames ? { ...draft, cellNames } : draft);
           // A different room: logged as a move, like moving a container.
           if (!insideNonRoom && !room && (unit.parent?.unitId ?? '') !== roomId) {
             await placeUnit(groupId, unit, roomPlacement, {
@@ -313,6 +360,12 @@
       <span class="muted">{dimLabels.levels}</span>
       <input type="number" min="1" max={MAX_LEVELS} bind:value={levels} />
     </label>
+    {#if kind === 'fridge'}
+      <label class="stack field">
+        <span class="muted">{$t('storage.dims.fridge.door')}</span>
+        <input type="number" min="0" max={MAX_LEVELS - 1} bind:value={doorShelves} />
+      </label>
+    {/if}
     {#if kind !== 'custom'}
       <label class="stack field">
         <span class="muted">{dimLabels.rows}</span>
@@ -330,6 +383,8 @@
   </div>
   {#if orphans.length > 0}
     <p class="muted" style="color: var(--danger); margin:0">{$t('storage.shrinkBlocked', { count: orphans.length })}</p>
+  {:else if doorBlocked}
+    <p class="muted" style="color: var(--danger); margin:0">{$t('storage.doorShiftBlocked', { count: onDoorBefore })}</p>
   {/if}
 
   <details>
@@ -339,7 +394,7 @@
         <input
           value={levelNames[String(l)] ?? ''}
           oninput={(e) => (levelNames = { ...levelNames, [String(l)]: e.currentTarget.value })}
-          placeholder={levelLabel({ kind, levels: shape.levels, levelNames: {} }, l, $t)}
+          placeholder={levelLabel({ kind, levels: shape.levels, levelNames: {}, doorShelves: door }, l, $t)}
         />
       {/each}
     </div>
@@ -349,7 +404,7 @@
   <label class="stack field">
     <span class="muted">{$t('storage.climate')}</span>
     <select bind:value={climate}>
-      <option value="">{$t('storage.climate.auto', { what: $t(`storage.climate.${kind === 'chest' ? 'freezer' : movable ? 'inherit' : 'room'}`) })}</option>
+      <option value="">{$t('storage.climate.auto', { what: $t(`storage.climate.${kind === 'chest' ? 'freezer' : kind === 'fridge' ? 'fridge' : movable ? 'inherit' : 'room'}`) })}</option>
       <option value="room">{$t('storage.climate.room')}</option>
       <option value="fridge">{$t('storage.climate.fridge')}</option>
       <option value="freezer">{$t('storage.climate.freezer')}</option>
@@ -379,7 +434,7 @@
   </div>
 
   <div class="row" style="justify-content: space-between">
-    <button class="primary" type="submit" disabled={busy || !name.trim() || orphans.length > 0}>
+    <button class="primary" type="submit" disabled={busy || !name.trim() || orphans.length > 0 || doorBlocked}>
       {unit ? $t('common.save') : $t('storage.createUnit')}
     </button>
     {#if unit}

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from '../../lib/i18n';
-  import { cellLabel, coveredOf, isLow, isSpanning, levelCellIds, levelLabel, unitIcon } from '../../lib/storage/layout';
+  import { cellLabel, coveredOf, doorShelfCount, isLow, isSpanning, levelCellIds, levelLabel, unitIcon } from '../../lib/storage/layout';
   import { dragToCell } from '../../lib/storage/dragToCell';
   import type { StorageItem, StorageUnit } from '../../lib/types';
 
@@ -18,7 +18,7 @@
     compact = false,
     onPick,
   }: {
-    unit: Pick<StorageUnit, 'name' | 'kind' | 'levels' | 'rows' | 'cols' | 'levelNames' | 'cellNames'>;
+    unit: Pick<StorageUnit, 'name' | 'kind' | 'levels' | 'rows' | 'cols' | 'levelNames' | 'cellNames' | 'doorShelves'>;
     items: StorageItem[];
     containers?: StorageUnit[]; // containers placed in this unit, shown before items
     highlight?: Set<string>;
@@ -64,11 +64,16 @@
   // spots) shows its name inside the cell instead of as a separate heading.
   let singleCellLevels = $derived(unit.rows === 1 && unit.cols === 1);
   let levels = $derived(Array.from({ length: unit.levels }, (_, i) => i + 1));
+  // A fridge's door shelves get their own heading, after the inside ones.
+  let firstDoorLevel = $derived(doorShelfCount(unit) > 0 ? unit.levels - doorShelfCount(unit) + 1 : null);
   const PREVIEW_NAMES = 3;
 </script>
 
 <div class="unit-grid" class:compact>
   {#each levels as level (level)}
+    {#if level === firstDoorLevel}
+      <div class="door-heading">{$t('storage.door')}</div>
+    {/if}
     <div class="level">
       {#if !singleCellLevels}
         <div class="level-label">{levelLabel(unit, level, $t)}</div>
@@ -133,6 +138,14 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
+  }
+  .door-heading {
+    margin-top: 0.4rem;
+    padding-top: 0.5rem;
+    border-top: 2px dashed var(--border);
+    font-size: 0.85em;
+    font-weight: 700;
+    color: var(--text-dim);
   }
   .level-label {
     font-size: 0.8em;

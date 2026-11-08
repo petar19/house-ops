@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { cellBoxes, cellSize, floorSize, placeOnFloor, unitSize, type Vec3 } from './scene3d';
+import { cellBoxes, cellSize, DOOR_DEPTH, floorSize, placeOnFloor, unitSize, type Vec3 } from './scene3d';
 import { spotFits } from './floorPlan';
+import { doorShelfCount } from './layout';
 import type { StorageUnit } from '../types';
 
 // Builds the 3D view's objects. Only loaded with the 3D view itself (three.js
@@ -61,6 +62,7 @@ export interface Built {
   pickables: THREE.Object3D[];
   labels: Label[];
   size: Vec3; // for framing the camera
+  center?: Vec3; // where it's centred, when that isn't x = z = 0
 }
 
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
@@ -82,8 +84,9 @@ function label(text: string, at: Vec3, pick: Record<string, string>, className =
 
 // The furniture itself, around cells laid out by cellBoxes: posts and
 // boards for shelves, walls and an open lid for a chest, a cabinet with
-// fronts for drawers, just boards for anything else.
-function frame(unit: StorageUnit, pal: Palette, pulled: (level: number) => number): THREE.Group {
+// fronts for drawers, a cabinet with a door for a fridge, just boards for
+// anything else.
+function frame(unit: StorageUnit, pal: Palette, pulled: (level: number) => number, doorOpen: boolean): THREE.Group {
   const g = new THREE.Group();
   const [W, H, D] = unitSize(unit);
   const [, h] = cellSize(unit);
@@ -110,6 +113,28 @@ function frame(unit: StorageUnit, pal: Palette, pulled: (level: number) => numbe
     lid.rotation.x = -Math.PI * 0.6;
     lid.add(mesh(box(W + 2 * t, t * 1.5, D + 2 * t), glass, [0, 0, (D + 2 * t) / 2]));
     g.add(lid);
+  } else if (unit.kind === 'fridge') {
+    const shell = new THREE.MeshStandardMaterial({ color: pal.surface.clone().lerp(pal.dim, 0.25), roughness: 0.4 });
+    const door = doorShelfCount(unit);
+    const inside = unit.levels - door;
+    const body = D - (door ? DOOR_DEPTH : 0);
+    const bz = -D / 2 + body / 2;
+    g.add(mesh(box(W + 2 * t, t, body), shell, [0, H + t / 2, bz]));
+    g.add(mesh(box(W + 2 * t, t, body), shell, [0, -t / 2, bz]));
+    g.add(mesh(box(t, H, body), shell, [-W / 2 - t / 2, H / 2, bz]));
+    g.add(mesh(box(t, H, body), shell, [W / 2 + t / 2, H / 2, bz]));
+    g.add(mesh(box(W, H, t), shell, [0, H / 2, -D / 2 - t / 2]));
+    for (let k = 1; k < inside; k++) g.add(mesh(box(W, t / 2, body), glass, [0, H - h * k, bz]));
+    // The door (see-through, so the door shelves show) and a lip along the
+    // bottom of each door shelf, shut across the front or open on the left.
+    const hd = door ? H / door : 0;
+    if (doorOpen) {
+      g.add(mesh(box(t, H + 2 * t, W + 2 * t), glass, [-W / 2 - t / 2, H / 2, D / 2 + W / 2]));
+      for (let k = 1; k <= door; k++) g.add(mesh(box(t, 0.05, W), wood, [-W / 2 + DOOR_DEPTH, H - hd * k + 0.025, D / 2 + W / 2]));
+    } else {
+      g.add(mesh(box(W + 2 * t, H + 2 * t, t), glass, [0, H / 2, D / 2 + t / 2]));
+      for (let k = 1; k <= door; k++) g.add(mesh(box(W, 0.05, t), wood, [0, H - hd * k + 0.025, D / 2 - DOOR_DEPTH]));
+    }
   } else if (unit.kind === 'drawers') {
     g.add(mesh(box(W + 2 * t, t, D + t), wood, [0, H + t / 2, -t / 2]));
     g.add(mesh(box(W + 2 * t, t, D + t), wood, [0, -t / 2, -t / 2]));
@@ -137,7 +162,8 @@ export function buildUnit(
   unit: StorageUnit,
   state: (cellId: string) => CellState,
   pal: Palette,
-  opts: { focusLevel?: number | null; labels?: boolean; pick?: (cellId: string) => Record<string, string> } = {},
+  // `doorOpen`: a fridge's door swung open (its own view) or shut (in a room).
+  opts: { focusLevel?: number | null; labels?: boolean; pick?: (cellId: string) => Record<string, string>; doorOpen?: boolean } = {},
 ): Built {
   const root = new THREE.Group();
   const pickables: THREE.Object3D[] = [];
@@ -146,10 +172,11 @@ export function buildUnit(
   const focus = opts.focusLevel ?? null;
   const pulled = (level: number) => (unit.kind === 'drawers' && focus === level ? D * 0.6 : 0);
   const pick = opts.pick ?? ((cellId: string) => ({ cellId }));
-  root.add(frame(unit, pal, pulled));
+  const doorOpen = opts.doorOpen ?? true;
+  root.add(frame(unit, pal, pulled, doorOpen));
 
   const edgeColor = pal.dark ? pal.dim : pal.border.clone().lerp(pal.dim, 0.5);
-  for (const c of cellBoxes(unit)) {
+  for (const c of cellBoxes(unit, { doorOpen })) {
     if (focus !== null && c.level !== focus) continue;
     const s = state(c.id);
     const [w, h, d] = c.size;
@@ -192,7 +219,10 @@ export function buildUnit(
       labels.push(label(s.label, [at[0], at[1] + h * 0.15, at[2] + d * 0.3], pick(c.id), s.low ? 'low' : ''));
     }
   }
-  return { root, pickables, labels, size: unitSize(unit) };
+  // Framed with the open door in view: it reaches out a fridge's width in front.
+  const [W, H] = unitSize(unit);
+  if (doorOpen && doorShelfCount(unit) > 0) return { root, pickables, labels, size: [W, H, D + W], center: [0, 0, W / 2] };
+  return { root, pickables, labels, size: [W, H, D] };
 }
 
 /** A room from its floor plan: the floor, and each placed unit standing on its spot. */
@@ -228,7 +258,7 @@ export function buildRoom(
   for (const u of units) {
     if (!u.floorSpot || !spotFits(u.floorSpot, floor)) continue;
     const { center, scale } = placeOnFloor(u, u.floorSpot, floor);
-    const built = buildUnit(u, (cellId) => state(u.id, cellId), pal, { pick: () => ({ unitId: u.id }) });
+    const built = buildUnit(u, (cellId) => state(u.id, cellId), pal, { pick: () => ({ unitId: u.id }), doorOpen: false });
     built.root.position.set(...center);
     built.root.scale.set(...scale);
     root.add(built.root);

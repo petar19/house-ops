@@ -329,7 +329,9 @@ export interface ShoppingRestock {
 // a freezer, boxes) plus loose things (the vacuum on the floor). It has the
 // single cell 1.1.1, so units/items "in the room" sit there, and every
 // path below it starts with the room's name without anyone typing it.
-export type StorageUnitKind = 'shelving' | 'chest' | 'drawers' | 'custom' | 'room';
+// A fridge is shelves inside plus shelves on its door: the last `doorShelves`
+// levels are the door ones (only the labels and the 3D view tell them apart).
+export type StorageUnitKind = 'shelving' | 'fridge' | 'chest' | 'drawers' | 'custom' | 'room';
 
 // groups/{groupId}/storageUnits/{id}
 export interface StorageUnit {
@@ -343,6 +345,7 @@ export interface StorageUnit {
   // from storageCategories) — drive which catalog items autocomplete offers.
   categories: string[];
   levelNames: Record<string, string>; // key: level number as a string
+  doorShelves?: number | null; // fridge only: how many of the levels are on the door
   cellNames: Record<string, string>; // key: cell id
   icon?: string | null; // emoji; falls back to the kind's icon
   // A container (box, bag, tackle box…) that can be put into a cell of
@@ -357,7 +360,7 @@ export interface StorageUnit {
   // A room's optional floor plan: a rows×cols grid of squares…
   floor?: { rows: number; cols: number } | null;
   // What it keeps things at, for expiry dates: unset means a chest is a
-  // freezer, a container takes after wherever it sits, anything else is room
+  // freezer, a fridge a fridge, a container takes after wherever it sits, anything else is room
   // temperature (see unitClimate in layout.ts).
   climate?: 'room' | 'fridge' | 'freezer' | null;
   // …and where a unit in that room stands on it (top-left square, 1-based,

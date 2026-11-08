@@ -8,6 +8,17 @@ export interface UnitShape {
   cols: number;
 }
 
+/** How many of a unit's levels are door shelves (the last ones) — fridges only, and never all of them. */
+export function doorShelfCount(unit: Pick<StorageUnit, 'kind' | 'levels' | 'doorShelves'>): number {
+  if (unit.kind !== 'fridge') return 0;
+  return Math.min(Math.max(Math.round(unit.doorShelves ?? 0), 0), unit.levels - 1);
+}
+
+/** Whether a level is on a fridge's door. */
+export function isDoorLevel(unit: Pick<StorageUnit, 'kind' | 'levels' | 'doorShelves'>, level: number): boolean {
+  return level > unit.levels - doorShelfCount(unit);
+}
+
 export const MAX_LEVELS = 20;
 export const MAX_ROWS = 6;
 export const MAX_COLS = 8;
@@ -16,11 +27,14 @@ export const MAX_COLS = 8;
 // of 4 boxes along its length, shelving is shelves × left/middle/right.
 export const DEFAULT_SHAPES: Record<StorageUnitKind, Omit<UnitShape, 'kind'>> = {
   shelving: { levels: 5, rows: 1, cols: 3 },
+  fridge: { levels: 7, rows: 1, cols: 1 }, // 4 shelves inside + DEFAULT_DOOR_SHELVES
   chest: { levels: 3, rows: 1, cols: 4 },
   drawers: { levels: 4, rows: 1, cols: 1 },
   custom: { levels: 3, rows: 1, cols: 1 },
   room: { levels: 1, rows: 1, cols: 1 },
 };
+
+export const DEFAULT_DOOR_SHELVES = 3;
 
 /** The one cell of a room, where everything in it sits. */
 export const ROOM_CELL = '1.1.1';
@@ -154,9 +168,11 @@ export function orphanedItems(shape: Omit<UnitShape, 'kind'>, items: StorageItem
   return items.filter((i) => !cellsFit(shape, coveredOf(i)));
 }
 
-export function levelLabel(unit: Pick<StorageUnit, 'kind' | 'levels' | 'levelNames'>, level: number, t: Translate): string {
+export function levelLabel(unit: Pick<StorageUnit, 'kind' | 'levels' | 'levelNames' | 'doorShelves'>, level: number, t: Translate): string {
   const custom = unit.levelNames?.[String(level)]?.trim();
   if (custom) return custom;
+  // A fridge's door shelves count on their own: Shelf 1–4, Door shelf 1–3.
+  if (isDoorLevel(unit, level)) return t('storage.level.fridgeDoor', { n: level - (unit.levels - doorShelfCount(unit)) });
   const base = t(`storage.level.${unit.kind}`, { n: level });
   // Stacked kinds read top-down, so say which end is which.
   if ((unit.kind === 'chest' || unit.kind === 'drawers') && unit.levels > 1) {
@@ -326,7 +342,7 @@ export function unitIcon(unit: Pick<StorageUnit, 'kind' | 'icon'>): string {
 // Icons to pick for a room, a piece of furniture or a box, by group.
 export const ICON_GROUPS: { id: string; icons: string[] }[] = [
   { id: 'rooms', icons: ['🚪', '🏠', '🛋️', '🛏️', '🍳', '🍽️', '🛁', '🚿', '🚽', '🧺', '🚗', '🏚️', '🪜', '🍷', '💻', '🧸', '🎮', '🌳', '🌿', '🏡', '⛺'] },
-  { id: 'furniture', icons: ['🗄️', '🗃️', '🪑', '💺', '🖥️', '📺', '🪞', '🪟', '🛒', '🧊', '🗑️', '🛠️', '🧹', '🪴', '🕰️', '📚', '🎹', '🧯'] },
+  { id: 'furniture', icons: ['🗄️', '🗃️', '🪑', '💺', '🖥️', '📺', '🪞', '🪟', '🛒', '❄️', '🧊', '🗑️', '🛠️', '🧹', '🪴', '🕰️', '📚', '🎹', '🧯'] },
   { id: 'containers', icons: ['📦', '🧰', '🧳', '💼', '👜', '👝', '🛍️', '🎒', '🧺', '🪣', '🫙', '🥡', '🍱', '🗂️', '📁', '🎁', '🧴', '🥫'] },
   { id: 'things', icons: ['🔧', '🔨', '🪛', '🔌', '🔋', '💡', '🎨', '🧵', '🧶', '💊', '🩹', '🧻', '🍼', '🐾', '🎄', '👟', '👕', '🧦', '🥾', '⚽', '🚲', '🛞', '🎣', '🏕️', '🍾', '🧂', '📷', '🎧', '💾'] },
   { id: 'colors', icons: ['🟥', '🟧', '🟨', '🟩', '🟦', '🟪', '🟫', '⬛', '⬜', '🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '🟤', '⚫', '⚪'] },
@@ -346,6 +362,7 @@ export function isLow(item: Pick<StorageItem, 'qtyMode' | 'amount' | 'level'>): 
 
 export const KIND_ICONS: Record<StorageUnitKind, string> = {
   shelving: '🗄️',
+  fridge: '❄️',
   chest: '🧊',
   drawers: '🗃️',
   custom: '📦',
@@ -410,6 +427,7 @@ export function canMerge(a: StorageItem, b: StorageItem): boolean {
 
 /**
  * What a unit keeps things at: its own setting, else a chest is a freezer,
+ * a fridge a fridge,
  * a container is whatever it sits in, a room is room temperature. Null for
  * Unsorted (it's only a waiting place).
  */
@@ -419,6 +437,7 @@ export function unitClimate(units: StorageUnit[], unitId: string): 'room' | 'fri
     if (unit.inbox) return null;
     if (unit.climate) return unit.climate;
     if (unit.kind === 'chest') return 'freezer';
+    if (unit.kind === 'fridge') return 'fridge';
     if (!unit.movable || !unit.parent) return 'room';
     const parentId: string = unit.parent.unitId;
     unit = units.find((u) => u.id === parentId);
