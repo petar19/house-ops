@@ -27,6 +27,8 @@
   import StorageHistory from './StorageHistory.svelte';
   import UnitEditor from './UnitEditor.svelte';
   import UnitGrid from './UnitGrid.svelte';
+  import ViewToggle from './ViewToggle.svelte';
+  import { storageView } from '../../lib/stores/viewMode';
 
   let { params }: { params: { unitId: string } } = $props();
 
@@ -168,16 +170,26 @@
     {/if}
 
     <div class="card stack">
-      <UnitGrid
-        {unit}
-        items={unitItems}
-        containers={innerContainers}
-        highlight={highlightCells}
-        onPick={(id) => (openCellId = id)}
-        onDrop={readonly ? undefined : handleDrop}
-      />
-      {#if !readonly}<span class="muted hint">{$t('storage.dragHint')}</span>{/if}
-      {#if dropError}<span class="muted" style="color: var(--danger)">{dropError}</span>{/if}
+      <div class="row" style="justify-content: flex-end"><ViewToggle /></div>
+      {#if $storageView === '3d'}
+        <!-- three.js is only downloaded the first time 3D is opened. -->
+        {#await import('./Unit3D.svelte')}
+          <p class="muted">{$t('common.loading')}</p>
+        {:then { default: Unit3D }}
+          <Unit3D {unit} items={unitItems} containers={innerContainers} highlight={highlightCells} onPick={(id) => (openCellId = id)} />
+        {/await}
+      {:else}
+        <UnitGrid
+          {unit}
+          items={unitItems}
+          containers={innerContainers}
+          highlight={highlightCells}
+          onPick={(id) => (openCellId = id)}
+          onDrop={readonly ? undefined : handleDrop}
+        />
+        {#if !readonly}<span class="muted hint">{$t('storage.dragHint')}</span>{/if}
+        {#if dropError}<span class="muted" style="color: var(--danger)">{dropError}</span>{/if}
+      {/if}
     </div>
     {/if}
   {/if}

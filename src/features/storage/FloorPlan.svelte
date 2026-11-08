@@ -6,6 +6,8 @@
   import { DEFAULT_FLOOR, MAX_FLOOR, fitSpot, spotFits } from '../../lib/storage/floorPlan';
   import { unitIcon } from '../../lib/storage/layout';
   import type { StorageUnit } from '../../lib/types';
+  import { storageView } from '../../lib/stores/viewMode';
+  import ViewToggle from './ViewToggle.svelte';
 
   // A room seen from above: a rows×cols grid of squares with its furniture
   // and boxes standing on it. Tap something to open it; when arranging, tap
@@ -84,14 +86,15 @@
 <div class="card stack">
   <div class="row" style="justify-content: space-between">
     <h3 style="margin:0">🗺️ {$t('floor.title')}</h3>
-    {#if !readonly}
-      <div class="row">
+    <div class="row">
+      {#if !arranging}<ViewToggle />{/if}
+      {#if !readonly}
         <button class:on={arranging} onclick={() => ((arranging = !arranging), (selectedId = null))}>
           {arranging ? `✓ ${$t('floor.done')}` : `✥ ${$t('floor.arrange')}`}
         </button>
         {#if arranging}<button onclick={startSizing}>{$t('floor.size')}</button>{/if}
-      </div>
-    {/if}
+      {/if}
+    </div>
   </div>
 
   {#if sizing}
@@ -108,6 +111,17 @@
     <p class="muted hint" style="margin:0">{selected ? $t('floor.tapSquare', { name: selected.name }) : $t('floor.pickFirst')}</p>
   {/if}
 
+  {#if $storageView === '3d' && !arranging}
+    {#if placed.length === 0}
+      <p class="muted" style="margin:0">{$t('view3d.nothingPlaced')}</p>
+    {:else}
+      {#await import('./Room3D.svelte')}
+        <p class="muted">{$t('common.loading')}</p>
+      {:then { default: Room3D }}
+        <Room3D {room} {units} />
+      {/await}
+    {/if}
+  {:else}
   <div class="plan-wrap">
     <div class="plan" style="grid-template-columns: repeat({floor.cols}, minmax(2.2rem, 1fr)); grid-template-rows: repeat({floor.rows}, 2.6rem)">
       {#each Array.from({ length: floor.rows }, (_, r) => r + 1) as row (row)}
@@ -140,6 +154,8 @@
       {/each}
     </div>
   </div>
+
+  {/if}
 
   {#if arranging && selected}
     <div class="row">
