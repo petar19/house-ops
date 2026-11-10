@@ -17,6 +17,7 @@ const ShoppingList = lazy(() => import('../features/shopping/ShoppingList.svelte
 export const routes = {
   '/': Home,
   '/expenses': ExpenseList,
+  '/expenses/categories': lazy(() => import('../features/expenses/SortCategories.svelte')),
   '/settings': lazy(() => import('../features/groups/Settings.svelte')),
   '/documents': lazy(() => import('../features/documents/Documents.svelte')),
   '/shopping': ShoppingList,

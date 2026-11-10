@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { replace } from 'svelte-spa-router';
+  import { link, replace } from 'svelte-spa-router';
   import { endOfMonth, format, startOfMonth } from 'date-fns';
   import { activeGroup, myAccess, myGroups, myGroupsLoading } from '../../lib/stores/groups';
   import { firstAvailableRoute } from '../../lib/utils/access';
@@ -89,6 +89,10 @@
     }),
   );
   let filtering = $derived(!!search.trim() || !!categoryFilter);
+  // Without a category in the period shown — a way into sorting them all.
+  let uncategorizedHere = $derived(
+    filterExpenses($expenses, { from: from || undefined, to: to || undefined, uncategorized: true }).length,
+  );
   let totals = $derived(flowTotals(shown));
 
   let receiptOf = $state<Expense | null>(null);
@@ -128,6 +132,9 @@
         <label>{$t('stats.from')} <input type="date" bind:value={from} /></label>
         <label>{$t('stats.to')} <input type="date" bind:value={to} /></label>
       </div>
+      {#if canEdit && uncategorizedHere > 0}
+        <a class="sort-link" href="/expenses/categories" use:link>🏷 {$t('expenseList.sortCategories', { count: uncategorizedHere })}</a>
+      {/if}
       <div class="row filters">
         <input type="search" placeholder={$t('expenseList.searchPlaceholder')} bind:value={search} />
         <select bind:value={categoryFilter}>
@@ -224,6 +231,9 @@
 {/if}
 
 <style>
+  .sort-link {
+    font-size: 0.95em;
+  }
   .filters input {
     flex: 2 1 10rem;
   }

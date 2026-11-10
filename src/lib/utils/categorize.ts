@@ -11,13 +11,17 @@ const EXACT_TOKEN_SCORE = 3;
 const SUBSTRING_SCORE = 2;
 const FUZZY_SCORE = 1;
 const SUGGEST_THRESHOLD = 1;
-export const AUTO_CHECK_THRESHOLD = 4;
+// One exact keyword is enough to pick a category by itself ("Konzum" with
+// the keyword "konzum"); a partial or fuzzy match is only suggested.
+export const AUTO_CHECK_THRESHOLD = EXACT_TOKEN_SCORE;
 
 function keywordScore(keyword: string, normalizedText: string, tokens: string[]): number {
   const normalizedKeyword = normalizeText(keyword);
   if (normalizedKeyword === '') return 0;
 
-  if (tokens.includes(normalizedKeyword)) return EXACT_TOKEN_SCORE;
+  // The whole text counts too, so a several-word keyword learnt from an
+  // expense name ("zoo city") matches that name exactly.
+  if (tokens.includes(normalizedKeyword) || normalizedText === normalizedKeyword) return EXACT_TOKEN_SCORE;
 
   if (normalizedText.includes(normalizedKeyword) || normalizedKeyword.includes(normalizedText)) {
     return SUBSTRING_SCORE;

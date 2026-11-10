@@ -12,6 +12,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { groupIdFor } from './groups';
@@ -148,6 +149,26 @@ export async function updateExpense(
 ): Promise<void> {
   await updateDoc(doc(db, 'groups', groupId, 'expenses', expenseId), data);
   if (data.name) await bumpKnownName(groupId, data.name);
+}
+
+/** Sets the same categories on many expenses at once (the Sort categories
+ * page), in batches of 400 — under Firestore's 500 writes per batch. One
+ * expense the rules refuse fails its whole batch, so that batch is then
+ * tried one by one. Returns how many couldn't be saved. */
+export async function setCategoriesOnExpenses(groupId: string, expenseIds: string[], categories: string[]): Promise<number> {
+  const ref = (id: string) => doc(db, 'groups', groupId, 'expenses', id);
+  let failed = 0;
+  for (let i = 0; i < expenseIds.length; i += 400) {
+    const chunk = expenseIds.slice(i, i + 400);
+    const batch = writeBatch(db);
+    for (const id of chunk) batch.update(ref(id), { categories });
+    try {
+      await batch.commit();
+    } catch {
+      for (const id of chunk) await updateDoc(ref(id), { categories }).catch(() => failed++);
+    }
+  }
+  return failed;
 }
 
 export async function deleteExpense(groupId: string, expenseId: string): Promise<void> {
