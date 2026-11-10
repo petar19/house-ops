@@ -73,7 +73,22 @@
     else if (from < $expensesRangeStart) expensesRangeStart.set(from);
   });
 
-  let shown = $derived(filterExpenses($expenses, { from: from || undefined, to: to || undefined }));
+  // Search and category narrow the list, and the totals with it — so
+  // picking a category shows what went on it this month.
+  let search = $state('');
+  let categoryFilter = $state(''); // '' = all, NO_CATEGORY, or a category id
+  const NO_CATEGORY = '__none';
+
+  let shown = $derived(
+    filterExpenses($expenses, {
+      from: from || undefined,
+      to: to || undefined,
+      search: search.trim() || undefined,
+      uncategorized: categoryFilter === NO_CATEGORY,
+      categoryIds: categoryFilter && categoryFilter !== NO_CATEGORY ? [categoryFilter] : undefined,
+    }),
+  );
+  let filtering = $derived(!!search.trim() || !!categoryFilter);
   let totals = $derived(flowTotals(shown));
 
   let receiptOf = $state<Expense | null>(null);
@@ -113,6 +128,16 @@
         <label>{$t('stats.from')} <input type="date" bind:value={from} /></label>
         <label>{$t('stats.to')} <input type="date" bind:value={to} /></label>
       </div>
+      <div class="row filters">
+        <input type="search" placeholder={$t('expenseList.searchPlaceholder')} bind:value={search} />
+        <select bind:value={categoryFilter}>
+          <option value="">{$t('expenseList.allCategories')}</option>
+          <option value={NO_CATEGORY}>{$t('expenseList.noCategory')}</option>
+          {#each $categories as c (c.id)}
+            <option value={c.id}>{c.name}</option>
+          {/each}
+        </select>
+      </div>
       {#if !$expensesLoading}
         <div class="totals">
           <div>
@@ -136,7 +161,12 @@
     {:else if $expenses.length === 0}
       <p class="muted">{$t('expenseList.empty')}</p>
     {:else if shown.length === 0}
-      <p class="muted">{$t('expenseList.emptyPeriod')}</p>
+      <p class="muted">{filtering ? $t('expenseList.noMatches') : $t('expenseList.emptyPeriod')}</p>
+      {#if filtering && (from || to)}
+        <div class="row">
+          <button type="button" onclick={() => { from = ''; to = ''; }}>{$t('expenseList.searchAllTime')}</button>
+        </div>
+      {/if}
     {:else}
       <div class="stack">
         {#each shown as expense (expense.id)}
@@ -194,6 +224,13 @@
 {/if}
 
 <style>
+  .filters input {
+    flex: 2 1 10rem;
+  }
+  .filters select {
+    flex: 1 1 8rem;
+    width: auto;
+  }
   .receipt {
     padding: 0 0.5em;
     font-size: 0.95em;

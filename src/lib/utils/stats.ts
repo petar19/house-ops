@@ -1,13 +1,17 @@
 import { format, startOfMonth, startOfWeek } from 'date-fns';
 import { clusterNames, type NameCluster } from './fuzzyGroup';
+import { normalizeText } from './normalize';
 import type { Expense, NameAlias } from '../types';
 
 export interface ExpenseFilters {
   from?: string; // ISO date, inclusive
   to?: string; // ISO date, inclusive
   categoryIds?: string[]; // OR match
+  uncategorized?: boolean; // only expenses with no category
   spenderUids?: string[]; // OR match
-  search?: string; // matched against name + description
+  // Matched against name, description and subitem names, ignoring case and
+  // diacritics ("cevapi" finds "Ćevapi").
+  search?: string;
 }
 
 // Money out vs money in over a set of expenses: a positive price is spending,
@@ -47,16 +51,17 @@ export function sortByRecency(expenses: Expense[]): Expense[] {
 }
 
 export function filterExpenses(expenses: Expense[], filters: ExpenseFilters): Expense[] {
+  const needle = filters.search ? normalizeText(filters.search) : '';
   return expenses.filter((e) => {
     if (filters.from && e.date < filters.from) return false;
     if (filters.to && e.date > filters.to) return false;
     if (filters.categoryIds?.length && !e.categories.some((c) => filters.categoryIds!.includes(c))) {
       return false;
     }
+    if (filters.uncategorized && e.categories.length > 0) return false;
     if (filters.spenderUids?.length && !filters.spenderUids.includes(e.paidBy)) return false;
-    if (filters.search) {
-      const needle = filters.search.toLowerCase();
-      const haystack = `${e.name} ${e.description ?? ''}`.toLowerCase();
+    if (needle) {
+      const haystack = normalizeText(`${e.name} ${e.description ?? ''} ${(e.subitems ?? []).map((s) => s.name).join(' ')}`);
       if (!haystack.includes(needle)) return false;
     }
     return true;

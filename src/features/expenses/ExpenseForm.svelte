@@ -1,7 +1,7 @@
 <script lang="ts">
   import { expenseMemberUids } from '../../lib/utils/access';
   import { currentUser } from '../../lib/stores/auth';
-  import { categories } from '../../lib/stores/categories';
+  import { categories, createCategory } from '../../lib/stores/categories';
   import { addExpense, knownNames, updateExpense } from '../../lib/stores/expenses';
   import { suggestCategories, AUTO_CHECK_THRESHOLD } from '../../lib/utils/categorize';
   import { normalizeText } from '../../lib/utils/normalize';
@@ -86,6 +86,29 @@
     selectedCategories = selectedCategories.includes(id)
       ? selectedCategories.filter((c) => c !== id)
       : [...selectedCategories, id];
+  }
+
+  // A category that doesn't exist yet can be made right here; it's picked
+  // for this expense straight away. One with the same name is just picked.
+  let addingCategory = $state(false);
+  let newCategoryName = $state('');
+  let creatingCategory = $state(false);
+  async function addNewCategory() {
+    const wanted = newCategoryName.trim();
+    if (!wanted) return;
+    creatingCategory = true;
+    try {
+      const existing = $categories.find((c) => normalizeText(c.name) === normalizeText(wanted));
+      const id = existing?.id ?? (await createCategory(wanted));
+      categoriesTouched = true;
+      if (!selectedCategories.includes(id)) selectedCategories = [...selectedCategories, id];
+      newCategoryName = '';
+      addingCategory = false;
+    } catch (e) {
+      error = e instanceof Error ? e.message : $t('expenseForm.categoryFailed');
+    } finally {
+      creatingCategory = false;
+    }
   }
 
   function pickName(displayName: string) {
@@ -207,7 +230,26 @@
           {category.name}
         </button>
       {/each}
+      {#if !addingCategory}
+        <button type="button" onclick={() => (addingCategory = true)}>{$t('expenseForm.newCategory')}</button>
+      {/if}
     </div>
+    {#if addingCategory}
+      <div class="row">
+        <input
+          style="flex:1"
+          placeholder={$t('expenseForm.newCategoryPlaceholder')}
+          bind:value={newCategoryName}
+          onkeydown={(e) => {
+            // Enter adds the category, not the whole expense.
+            if (e.key === 'Enter') { e.preventDefault(); addNewCategory(); }
+            if (e.key === 'Escape') addingCategory = false;
+          }}
+        />
+        <button type="button" class="primary" disabled={creatingCategory || !newCategoryName.trim()} onclick={addNewCategory}>{$t('common.add')}</button>
+        <button type="button" onclick={() => { addingCategory = false; newCategoryName = ''; }}>{$t('common.cancel')}</button>
+      </div>
+    {/if}
   </div>
 
   <div class="stack">
