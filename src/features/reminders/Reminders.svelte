@@ -4,6 +4,7 @@
   import { currentUser } from '../../lib/stores/auth';
   import { myGroups } from '../../lib/stores/groups';
   import { t } from '../../lib/i18n';
+  import { nextMonthlyAfter, nowLocalDateTime, type MonthlyOn } from '../../lib/monthlyRule';
   import type { Reminder } from '../../lib/types';
 
   // Not gated by an active group — a personal reminder isn't tied to one at
@@ -112,8 +113,15 @@
     return parts.length > 0 ? parts.join(' ') : '0s';
   }
 
+  function monthlyLabel(rule: MonthlyOn): string {
+    if ('day' in rule) return $t('reminders.monthlyDay', { day: rule.day });
+    const nth = rule.nth === -1 ? $t(`reminders.nthLast.${rule.weekday}`) : $t(`reminders.nth.${rule.nth}`);
+    return $t('reminders.monthlyWeekday', { nth, weekday: $t(`reminders.weekday.${rule.weekday}`) });
+  }
+
   function periodLabel(r: Reminder): string {
     if (r.scheduleType !== 'recurring') return '';
+    if (r.monthlyOn) return monthlyLabel(r.monthlyOn);
     if (r.periodSeconds) return $t('reminders.everyDuration', { duration: formatDurationSeconds(r.periodSeconds) });
     const amount = r.periodAmount ?? 1;
     const unit = $t(`reminders.unit.${r.periodUnit ?? 'day'}`);
@@ -126,9 +134,19 @@
   let newGroupId = $state('');
   let newText = $state('');
   let newWhen = $state('');
-  let newScheduleType = $state<'once' | 'recurring'>('once');
+  let newScheduleType = $state<'once' | 'recurring' | 'monthly'>('once');
   let newPeriodAmount = $state(1);
   let newPeriodUnit = $state<'day' | 'week' | 'month'>('day');
+  // Monthly: on a date, or on the nth weekday; the first one is the next
+  // time it comes round (lib/monthlyRule.ts), so it only needs a time.
+  let newMonthlyKind = $state<'day' | 'weekday'>('day');
+  let newMonthDay = $state(new Date().getDate());
+  let newNth = $state(1);
+  let newWeekday = $state(new Date().getDay());
+  let newTime = $state('09:00');
+  // Monday first, as on a Croatian calendar.
+  const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+  const NTHS = [1, 2, 3, 4, -1];
   let error = $state('');
   let saving = $state(false);
 
@@ -150,13 +168,19 @@
     newPeriodAmount = 1;
     newPeriodUnit = 'day';
     newTargetUid = '';
+    newMonthlyKind = 'day';
+    newMonthDay = new Date().getDate();
+    newNth = 1;
+    newWeekday = new Date().getDay();
+    newTime = '09:00';
   }
 
   async function handleCreate() {
     if (!$currentUser) return;
     error = '';
     const text = newText.trim();
-    if (!text || !newWhen) {
+    const monthly = newScheduleType === 'monthly';
+    if (!text || (monthly ? !newTime : !newWhen)) {
       error = $t('reminders.missingFields');
       return;
     }
@@ -164,6 +188,11 @@
       error = $t('reminders.pickGroup');
       return;
     }
+    const monthlyOn: MonthlyOn | null = !monthly
+      ? null
+      : newMonthlyKind === 'day'
+        ? { day: Math.min(Math.max(Math.round(newMonthDay) || 1, 1), 31) }
+        : { nth: Number(newNth), weekday: Number(newWeekday) };
     saving = true;
     try {
       const target = newScope === 'group' ? collection(db, 'groups', newGroupId, 'reminders') : collection(db, 'reminders');
@@ -173,9 +202,12 @@
         ...(newScope === 'group' ? { groupId: newGroupId } : {}),
         ...(newScope === 'personal' && newTargetUid ? { targetUid: newTargetUid } : {}),
         text,
-        scheduleType: newScheduleType,
-        nextTriggerAt: newWhen,
+        scheduleType: monthly ? 'recurring' : newScheduleType,
+        nextTriggerAt: monthlyOn ? nextMonthlyAfter(nowLocalDateTime(), monthlyOn, newTime) : newWhen,
         ...(newScheduleType === 'recurring' ? { periodAmount: newPeriodAmount, periodUnit: newPeriodUnit } : {}),
+        // periodUnit 'month' beside the rule, so anything that doesn't know
+        // monthlyOn still reads it as monthly.
+        ...(monthlyOn ? { monthlyOn, periodAmount: 1, periodUnit: 'month' } : {}),
         status: 'active',
         createdAt: Date.now(),
         source: 'app',
@@ -257,15 +289,49 @@
         <p class="muted">{$t('reminders.groupHint')}</p>
       {/if}
 
-      <label>
-        {$t('reminders.whenLabel')}
-        <input type="datetime-local" bind:value={newWhen} required />
-      </label>
-
       <div class="row">
         <label class="row"><input type="radio" name="schedule" value="once" bind:group={newScheduleType} /> {$t('reminders.once')}</label>
         <label class="row"><input type="radio" name="schedule" value="recurring" bind:group={newScheduleType} /> {$t('reminders.recurring')}</label>
+        <label class="row"><input type="radio" name="schedule" value="monthly" bind:group={newScheduleType} /> {$t('reminders.monthly')}</label>
       </div>
+
+      {#if newScheduleType === 'monthly'}
+        <div class="row">
+          <label class="row">
+            <input type="radio" name="monthlyKind" value="day" bind:group={newMonthlyKind} />
+            {$t('reminders.monthlyOnDay')}
+          </label>
+          <input type="number" min="1" max="31" style="width:5em" bind:value={newMonthDay} disabled={newMonthlyKind !== 'day'} />
+        </div>
+        {#if newMonthlyKind === 'day' && newMonthDay > 28}
+          <p class="muted" style="margin:0">{$t('reminders.monthlyShortHint')}</p>
+        {/if}
+        <div class="row">
+          <label class="row">
+            <input type="radio" name="monthlyKind" value="weekday" bind:group={newMonthlyKind} />
+            {$t('reminders.monthlyOnWeekday')}
+          </label>
+          <select style="width:auto" bind:value={newNth} disabled={newMonthlyKind !== 'weekday'}>
+            {#each NTHS as n (n)}
+              <option value={n}>{n === -1 ? $t('reminders.nth.last') : $t(`reminders.nth.${n}`)}</option>
+            {/each}
+          </select>
+          <select style="width:auto" bind:value={newWeekday} disabled={newMonthlyKind !== 'weekday'}>
+            {#each WEEKDAY_ORDER as d (d)}
+              <option value={d}>{$t(`reminders.weekday.${d}`)}</option>
+            {/each}
+          </select>
+        </div>
+        <label>
+          {$t('reminders.timeLabel')}
+          <input type="time" bind:value={newTime} required />
+        </label>
+      {:else}
+        <label>
+          {$t('reminders.whenLabel')}
+          <input type="datetime-local" bind:value={newWhen} required />
+        </label>
+      {/if}
       {#if newScheduleType === 'recurring'}
         <div class="row">
           <span>{$t('reminders.every')}</span>

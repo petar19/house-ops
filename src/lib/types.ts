@@ -1,3 +1,5 @@
+import type { MonthlyOn } from './monthlyRule';
+
 export type GroupFeature = 'expenses' | 'photoSaving' | 'shoppingList' | 'storage';
 
 // none: tab hidden and data unreadable; view: read-only; edit: full use.
@@ -260,6 +262,12 @@ export interface Reminder {
   periodUnit?: 'day' | 'week' | 'month';
   periodAmount?: number;
   periodSeconds?: number;
+  // On a day of the month ("every 11th", "every 1st Tuesday") — the bot
+  // works out each next one from this; periodUnit 'month' is stored beside
+  // it. See lib/monthlyRule.ts.
+  monthlyOn?: MonthlyOn | null;
+  // When it finished (ms); the bot deletes it a day later.
+  doneAt?: number;
   // Fires still to go (counting the one currently pending) for a reminder
   // created with ?reminder(WHEN, FREQ, TIMES); unset means it repeats forever.
   timesRemaining?: number;
